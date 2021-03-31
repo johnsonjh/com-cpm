@@ -364,3 +364,7 @@ compiler wanted to use in its objects, brought that up to something like
 from laboratory curiosity to practical computer, nearly overnight.
 (Although the simulation ran at less than half the speed of the real
 thing. Native programs, though, *were* blazingly fast in comparison.)
+
+ - COM: CP/M-80 Simulator by [Jim Cathey](http://formicapeak.com/~jimc/com.html)
+ - Email: [jim.cathey.pb@gmail.com](mailto:jim.cathey.pb@gmail.com)
+ - Phone: +1 (509) 926-7801. (I prefer e-mail, where possible.)
