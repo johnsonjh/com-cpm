@@ -1,4 +1,4 @@
-# COM: A CP/M-80 SIMULATOR
+# COM: A CP/M-80 Simulator
 
 Sample \'*screen shot*\' from _**WordStar 3.00**_:
 
