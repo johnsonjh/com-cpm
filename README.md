@@ -140,8 +140,8 @@ The simulator has recently been ported to an all-C version, which runs not only
 on the **UNIX** systems that the assembly-language version runs on (albeit
 slower), but also on much more modern machines. As one might imagine, hundreds
 to thousands of megahertz host machines really perk the old girl up, even with
-the innate _2-3__×_ reduction in efficiency of C versus the hand-tuned assembly
-language of the original.
+the innate _2-3\_\_×_ reduction in efficiency of C versus the hand-tuned
+assembly language of the original.
 
 The simulation environment has been enhanced to support **CP/M** drives `A:`
 through `P:`, the full set, though not to the associated 16 _USER_ spaces per
