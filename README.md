@@ -385,5 +385,5 @@ programs, though, *were* blazingly fast in comparison.)
 ## Author Information
 
 - [Jim Cathey](http://formicapeak.com/~jimc)
-- Email: [jim.cathey.pb@gmail.com](mailto:jim.cathey.pb@gmail.com)
-- Phone: +1 (509) 926-7801. (I prefer e-mail, where possible.)
+- **Email**: [jim.cathey.pb@gmail.com](mailto:jim.cathey.pb@gmail.com)
+- **Phone**: `+1 (509) 926-7801`  (*I prefer e-mail, where possible*.)
