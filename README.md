@@ -54,11 +54,12 @@ Now that the *PowerPC* platforms are being left in the dust, I decided
 to port the assembly-language synthetic CPU to them.  Why?  No good
 reason, mostly just curiosity to see how much better than the C compiler
 I could do by careful hand-coding. (I also wished to use it as a vehicle
-for familiarizing myself with the *PPC* because we use it at work.) The
-port is roughly a line-by-line translation of the original *680x0* code.
-This is probably sub-optimal with regards to what the *PPC* could really
-do, but I just wasn\'t up to the job of completely re-architecting it.
-The *PPC*\'s flag registers are sufficiently difficult to access, and
+for familiarizing myself with the *PPC* because we use it at work.)
+
+The port is roughly a line-by-line translation of the original *680x0*
+code. This is probably sub-optimal with regards to what the *PPC* could
+really do, but I just wasn\'t up to the job of completely re-architecting
+it. The *PPC*\'s flag registers are sufficiently difficult to access, and
 weird enough once you do get there, that I abandoned the original
 memory-thrifty architecture of converting the native arithmetic flags to
 the target\'s flags via small lookup tables in favor of an approach
@@ -70,15 +71,16 @@ target machine image space, leaving the other half for the host OS *and*
 the simulator, so that was not possible.) This approach also enabled
 creation of a true half-carry flag, rather than recording all arguments
 to add/subtract instructions for later use in recreating a half-carry in
-any subsequent DAA instructions. My unfamiliarity with the *PPC* has also
-no doubt resulted in less than optimal results, even given this
-architecture, especially as pipeline and cache effects have been
-ignored. I must say that I find the *PPC* difficult to write assembly for,
-but the bulk of that can be blamed on poor documentation. (Very few
-people do this, after all. It\'s a C compiler world now, so far as
-high-performance code is concerned.)
+any subsequent DAA instructions.
 
-I also began a port to the *MIPS* because we use those at work too, and
+My unfamiliarity with the *PPC* has also no doubt resulted in less than
+optimal results, even given this architecture, especially as pipeline
+and cache effects have been ignored. I must say that I find the *PPC*
+difficult to write assembly for, but the bulk of that can be blamed on
+poor documentation. (Very few people do this, after all. It\'s a C
+compiler world now, so far as high-performance code is concerned.)
+
+I also began a port to the *MIPS*, because we use those at work too, and
 this *is* an excellent vehicle for learning a processor\'s native
 instruction set. The move away from using the host processor\'s native
 condition-code flags proved to be a good one, because the *MIPS* doesn\'t
@@ -109,28 +111,33 @@ Performance (*in seconds for the test run*):
 Of particular interest is that while for the *680x0* platforms I could
 beat the C code by a substantial margin, for the *PPC* it wasn\'t worth
 the effort! Modern C compilers seem to mate to modern RISC processors
-very well, imagine that. What\'s more, except for the large lookup
-table, the C version of the CPU is several kilobytes *smaller*! (This
-can be blamed on the assembly version\'s in-line next macro, which
-doesn\'t seem to make any speed difference when replaced with a branch
-to a central next routine, which does make the assembly version
-smaller.) Most instructive, though the results were not exactly what I
-had expected. (Which means this was a worthy exercise.)
+very well, imagine that.
+
+What\'s more, except for the large lookup table, the C version of the
+CPU is several kilobytes *smaller*! (This can be blamed on the assembly
+version\'s in-line next macro, which doesn\'t seem to make any speed
+difference when replaced with a branch to a central next routine, which
+does make the assembly version smaller.)
+
+Most instructive, though the results were not exactly what I had expected.
+(Which means this was a worthy exercise.)
 
 Also note that the C-only version of the `comtest` runs *faster* than
 the one that includes assembly language, yet the simple assembler
 version runs faster than the simple C version, though not by a huge
 margin. This tells me that the processor\'s cache isn\'t big enough, and
 that `comtest` is starting to thrash the cache a bit more than
-`ccomtest` did, as it is larger. Interesting. (The `comtest` programs are
-for pitting the C and assembler versions of a synthetic CPU against each
-other. Differences halt the simulation. *Both* CPU models have gained by
-this procedure. The C-only test version is for debugging the test
-harness itself, as it compares two identical CPU models, which can be
-tweaked to induce errors to ensure that they are caught by the harness.)
+`ccomtest` did, as it is larger. Interesting.
 
-Two additional makefiles have been added, `make.ppc` and `make.mips`,
-the desired file should be linked to `Makefile`, as appropriate.
+(The `comtest` programs are for pitting the C and assembler versions of
+a synthetic CPU against each other. Differences halt the simulation.
+*Both* CPU models have gained by this procedure. The C-only test version
+is for debugging the test harness itself, as it compares two identical
+CPU models, which can be tweaked to induce errors to ensure that they
+are caught by the harness.)
+
+Two additional `Makefiles` have been added: `make.ppc` and `make.mips`.
+The desired file should be linked to `Makefile`, as appropriate.
 
 ## Update (2006)
 
@@ -231,15 +238,16 @@ This is a **CP/M** *2.2* Simulator that simulates an *8080* CPU and a
 the simulator is written in *680x0* assembly language for speed. It
 has been tested under **DNIX** (a **SVR2** compatible with many **SVR3**,
 **BSD**, **Xenix**, and **Sun** extensions), on a *68030* **NeXT**, and
-on a *68030* **Amiga** running **SVR4**. One \'benchmark\' shows that on
-machines of the *68020*/*68030* class the simulator performs about as
-well as a 7 MHz *Z-80* would. Other tests indicate that this is somewhat
-optimistic.
+on a *68030* **Amiga** running **SVR4**.
+
+One \'benchmark\' shows that on machines of the *68020*/*68030* class
+the simulator performs about as well as a 7 MHz *Z-80* would. Other
+tests indicate that this is somewhat optimistic.
 
 ## Why CP/M?
 
-Why not? I updated this program (originally running under **CP/M-68K**, and
-published in the *January 1986* issue of *Dr.* *Dobb\'s* *Journal*
+Why not? I updated this program (originally running under **CP/M-68K**,
+and published in the *January 1986* issue of *Dr.* *Dobb\'s* *Journal*
 *\[of* *Computer* *Calisthenics* *and* *Orthodontia\]*) out of curiosity
 to see how it would run on something newer than the *68000* it was
 originally running on in 1984, and out of a perverse desire to make my
@@ -249,20 +257,26 @@ colleagues sick.
 
 The simulator gives you a simple **CP/M** run-time environment with only
 one drive (`A:`), which is the current directory when the simulator is
-invoked. There is no *CCP* (the command processor, analogous to the **UNIX**
+invoked.
+
+There is no *CCP* (the command processor, analogous to the **UNIX**
 shell); programs must be run individually under the simulator. The
 simulator can be invoked so that the listing (printer) output goes to a
-file (otherwise it is discarded). It normally converts **H19** escape
-sequences (and a couple of other oddballs) to **VT100** sequences, since
-much CP/M software doesn\'t know what a **VT100** is, yet it is the current
-**UNIX** *\'standard\'*. If **CP/M** had any *\'standard\'* (it
-didn\'t, really) it was the **H19**. This feature can be disabled, if
-needed. Similarly, the simulation optionally maps `DEL` to `BS` on keyboard
-input, since `BS` is the **CP/M** *\'standard\'*, whereas `DEL` is many
+file (otherwise it is discarded).
+
+It normally converts **H19** escape sequences (and a couple of other
+oddballs) to **VT100** sequences, since much **CP/M** software doesn\'t
+know what a **VT100** is, yet it is the current **UNIX** *\'standard\'*.
+If **CP/M** had any *\'standard\'* (it didn\'t, really) it was the **H19**.
+This feature can be disabled, if needed.
+
+Similarly, the simulation optionally maps `DEL` to `BS` on keyboard input,
+since `BS` is the **CP/M** *\'standard\'*, whereas `DEL` is many
 **UNIX** systems\' standard. The simulator maps all filenames to
 uppercase (for display by **CP/M** programs), and converts them to
-lowercase when actually doing file I/O. Several of the more esoteric
-*BDOS* calls are not supported.
+lowercase when actually doing file I/O.
+
+Several of the more esoteric *BDOS* calls are not supported.
 
 Please remember that **CP/M** text files use both carriage returns and
 line feeds (one each) to delimit lines, and the end-of-file character is
@@ -276,6 +290,7 @@ them don\'t conform to these expectations.
 The hardest part of porting this program is getting the synthetic CPU
 (assembly language) module to assemble since in the infinite wisdom of
 the **UNIX** world no vendor seems to use Motorola\'s standard mnemonics.
+
 The module is written using the **DNIX** assembler syntax (supposedly MIT
 mnemonics with Motorola standard addressing syntax), and is sed\'ed to
 whatever is necessary. (It actually started life in 1984 under **CP/M-68K**,
@@ -289,77 +304,86 @@ I have left as an exercise for the reader the writing of the synthetic
 CPU module for non-*680x0* systems. I considered writing one in C to serve
 as a model, but it would function so slowly on the systems I use (the
 ones I *did* get it working on) that I didn\'t want to waste my
-time---it\'s not like I *need* a **CP/M** simulator for anything. The
+time - it\'s not like I *need* a **CP/M** simulator for anything. The
 energetic could write one fairly easily (how hard can an *8080* be after
 all?), but for real speed a new assembly-language module should be
-written. It would be particularly efficient on an x86 machine, since the
-slowest part of the simulation is getting the flags right. The *x86* and
-the *8080* have the same flags, so it\'s probable that the *8080* flags
-could just be taken straight out of the *x86* flags register (i.e. no work
-at all). However, as I think that most *x86* machines are evil incarnate I
-refuse to take a stab at the project (except maybe with a wooden stake).
+written.
 
-There are three makefiles provided, one for **DNIX**, one for **NeXT**,
+It would be particularly efficient on an *x86* machine, since the slowest
+part of the simulation is getting the flags right. The *x86* and the *8080*
+have the same flags, so it\'s probable that the *8080* flags could just be
+taken straight out of the *x86* flags register (i.e. no work at all).
+However, as I think that most *x86* machines are evil incarnate I refuse
+to take a stab at the project (except maybe with a wooden stake).
+
+There are three `Makefiles` provided: one for **DNIX**, one for **NeXT**,
 and one for vanilla (*?*) **System V**. The appropriate file should be
 linked to the name `Makefile`, then you should just be able to type
 \'`make`\'. If I were better at multi-system configuration programs
-this could probably have been made more elegant, but it works well enough
-for me.
+this could probably have been made more elegant, but it works well
+enough for me.
 
 ## Terms
 
 As was the case for its predecessor, this program is in the **Public**
 **Domain**. All I ask is that my name be left on the code if it is used
-elsewhere. (As if that\'s likely at *this* late date!) The *Z-80*
-simulation routines were taken from an independent Amiga port /
-enhancement of the original code done by *Charlie* *Gibbs* and *Willi*
-*Kusche*. Their code is slightly more restricted. I have placed their
-disclaimer at the front of `com.c`; their code is conditionally included
-in the simulator. If it isn\'t included, you get a plain *8080* CPU with a
-few *Z-80* instructions (as before, under **CP/M-68K**).
+elsewhere. (As if that\'s likely at *this* late date!)
 
-Enjoy!
+The *Z-80* simulation routines were taken from an independent Amiga
+port/enhancement of the original code done by *Charlie* *Gibbs* and
+*Willi* *Kusche*. Their code is slightly more restricted. I have placed
+their disclaimer at the front of `com.c`; their code is conditionally
+included in the simulator. If it isn\'t included, you get a plain *8080*
+CPU with a few *Z-80* instructions (as before, under **CP/M-68K**).
+
+*Enjoy***!**
 
 ## Background (1984)
 
 This simulator was written in desperation in 1983 when I was working on
-an S100 bus **CP/M-68K** system and trying to integrate a hard disk
+an *S100* bus **CP/M-68K** system and trying to integrate a hard disk
 controller. The disk formatter I wrote according to the (expensive!)
 controller\'s documentation simply did not work, yet the card was one
 that worked very well in regular **CP/M** systems, using a formatting
-program that came with the card. I had two options: either borrow one of
-the *EM-180* emulators from work, *and* a functioning *S100* **CP/M**
-system, and trap how the card was being talked to, or write a simulator
-and do the same trapping in software. The latter seemed more interesting,
-less bulky, and didn\'t inconvenience anyone else. It also offered the
-possibility of running existing applications (like word processors or
-spreadsheets) on the new hardware. (Native applications of this sort
-were neither expected to be particularly available, nor inexpensive
-even if they were.) The choice was easy.
+program that came with the card.
+
+I had two options: either borrow one of the *EM-180* emulators from
+work, *and* a functioning *S100* **CP/M** system, and trap how the card
+was being talked to, or write a simulator and do the same trapping in
+software. The latter seemed more interesting, less bulky, and didn\'t
+inconvenience anyone else. It also offered the possibility of running
+existing applications (like word processors or spreadsheets) on the
+new hardware. (Native applications of this sort were neither expected
+to be particularly available, nor inexpensive even if they were.)
+
+The choice was easy.
 
 Because the host and target systems were both **CP/M**, potential problem
 areas like terminal I/O or disk files didn\'t need any special treatment
 or translation, requests could just be forwarded directly to the host
 OS. The entire thing could easily be written in assembly language, which
-was a necessity for the synthetic CPU to have the best performance
-anyway.
+was a necessity for the synthetic CPU to have the best performance anyway.
 
 Once the simulator worked well enough to host the hard disk formatter it
 became clear that the documentation for the controller card was wrong.
 One of the registers required the 2\'s-complement of the desired value
-to be written to it, a fact the documentation didn\'t see fit to
-mention. With this change my own formatter program worked correctly, and
-in short order my system then had a whopping *ST-506* **5MB** hard disk
-on it! Shortly after that the simulator worked well enough to run
-**MBASIC**, etc. The simulator was *8080*-only, all that was necessary to
-run 90% of **CP/M** programs. Adding a couple of *Z-80* instructions,
-the ones the *BDS C* compiler wanted to use in its objects, brought that
-up to something like _**99%**_. The final Version 1.0 simulator transformed
-this expensive system from laboratory curiosity to practical computer,
-nearly overnight. (Although the simulation ran at less than half the speed
-of the real thing. Native programs, though, *were* blazingly fast in
-comparison.)
+to be written to it, a fact the documentation didn\'t see fit to mention.
+With this change my own formatter program worked correctly, and in short
+order my system then had a whopping *ST-506* **5MB** hard disk on it!
 
-- COM: CP/M-80 Simulator by [Jim Cathey](http://formicapeak.com/~jimc/com.html)
+Shortly after that the simulator worked well enough to run **MBASIC**,
+etc. The simulator was *8080*-only, all that was necessary to run 90% of
+**CP/M** programs. Adding a couple of *Z-80* instructions, the ones the
+*BDS C* compiler wanted to use in its objects, brought that up to something
+like _**99%**_.
+
+The final Version 1.0 simulator transformed this expensive system from
+laboratory curiosity to practical computer, nearly overnight. (Although the
+simulation ran at less than half the speed of the real thing. Native
+programs, though, *were* blazingly fast in comparison.)
+
+## Author Information
+
+- [Jim Cathey](http://formicapeak.com/~jimc)
 - Email: [jim.cathey.pb@gmail.com](mailto:jim.cathey.pb@gmail.com)
 - Phone: +1 (509) 926-7801. (I prefer e-mail, where possible.)
