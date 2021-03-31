@@ -1,0 +1,149 @@
+                      A CP/M emulator for the Amiga
+
+Release one : 3 - October - 1988
+
+(C) Copyright By Ulf Nordquist.
+
+This software package emulates a CPM computer with a Z80 processor connected
+to an ADM3A terminal.
+
+This software may only be used for non-commercial purposes, but may be freely
+distributed as long as all the files in the package is kept together.
+
+The package consists of these files:
+
+The source code:
+cz.a (the main module)
+ce.a,(the bios, bdos and terminal emulator)
+zek.a, zekcb.a, zekdd.a, zeked.a (the Z80 emulator)
+
+The link command file:
+LinkCPM
+This file:
+Readme
+
+                             How to use it
+                             -------------
+
+Before you start the emulator, assign a: to the directory where the cpm
+files are.
+
+[ Ed. Note: i.e. assuming undisturbed use of this disk:
+   1> Assign a: AmigaLibdisk165:CPM/DriveA      
+ -Fred ><> ]
+
+The program has four menues:
+
+Menu Project
+
+   About
+      This gives the expected result
+
+   Version
+      List the version number for the modules and the task address
+
+   Quit
+      This also gives the expected result
+
+Menu Windows
+
+   Z80 processor
+      Opens a window which shows the Z80 registers. It also has three
+      gadgets: Step - Stop/Run - Reset
+         Step:  Executes the next instruction, the Z80 must be stopped
+                for this to work
+         Stop:  Stops the Z80 processor, the gadget then changes to a
+                Run gadget
+         Reset: Exit to the A> prompt
+
+Terminal
+
+   Trap Esc Seq
+      Gives a requester when the terminal emulator finds an undefined
+      escape sequence sent to it, normally such escape sequences are
+      ignored
+
+   Log to File
+      Asks for a file name. Opens this file and logs all activity in
+      the console window to it
+
+Debug
+
+   Count
+      Increments a counter for each Z80 instruction as it is emulated,
+      and for each BDOS and BIOS call. Max count is 255.
+
+   Save Count
+      Asks for a file name. Writes the count result so far as a binary
+      image to it. This file is organized as this:
+      byte $00 - $ff - one byte opcodes
+      byte $100-$1ff - $cb two byte opcodes
+      byte $200-$2ff - $dd two byte opcodes
+      byte $300-$3ff - $ed two byte opcodes
+      byte $400-$4ff - $fd two byte opcodes
+      byte $500-$57f - BDOS calls
+      byte $580-$5ff - BIOS calls
+      Note. This is a binary file. To be able to look at it by an editor,
+      convert it to hex format by using opt h with type.
+         Example: type >file cpm.count opt h
+
+   Trace
+      Asks for a file name. Writes the address in hex for each instruction
+      as it is emulated to it.
+
+Apart from these menues, the program is used as any CP/M computer
+
+                 Programs the emulator has been tested with
+                 ------------------------------------------
+
+                   --- First the programs that works ---
+
+D - seems to work alright
+
+M80, L80 - seems to work alright
+
+   I have assembled and linked the program SPIRAL.MAC and ASMTEST.MAC
+
+ZSID - seems to work alright
+
+   I have used ZSID to try to find why MBasic, WordStar and TurboPascal
+   did not work.
+
+MBasic - seems to work alright
+
+   I have run the program SUPTRK3.BAS
+
+WordStar - I have some problems with this
+   WordStar is unable to find the end of files, it just ignores if bdos20
+   (read sequential) returns $ff as end of file flag
+
+TurboPascal - here are also some problems
+   Compile to disk does not work, it says that the disk is full (which it
+   is not)
+
+   However I have edited, compiled to memory and run the file TEST.PAS
+
+                --- Now for the program that do not work ---
+
+PIP - copy from CON: to a file works, but copy from file to file does not
+   work either it gives a disk write or a disk read error
+
+SUBMIT - nothing happens, just a little disk activity
+
+XSUB - it just says: Xsub Already Present
+
+============================================================================
+
+Thanks to:
+Matt Dillon for the editor
+Charlie Gibbs for the assembler
+Metadigm, Inc. for the debugger
+Commodore-Amiga, Inc. for the computer
+
+Comments and bug reports are welcome:
+
+       Ulf Nordquist
+       Brunnehagen 36
+       417 47 Gothenburg
+       Sweden
+

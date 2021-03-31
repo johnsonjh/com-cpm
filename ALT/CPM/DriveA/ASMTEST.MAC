@@ -1,0 +1,19 @@
+.Z80
+
+;	this file is written with ws, assembled with m80 and linked with l80
+;	all on my amiga cpm emulator
+
+
+bdos		equ	5		;cpm entry vector
+prs		equ	9		;print string
+
+cr		equ	13
+lf		equ	10
+
+start:		ld	c,prs
+		ld	de,msg
+		jp	bdos
+
+msg:		defm	"Hello world",cr,lf,"$"
+
+		end

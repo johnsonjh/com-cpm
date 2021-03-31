@@ -1,0 +1,5 @@
+d:as68 -l -u -s d: com1.s
+d:as68 -l -u -s d: com2.s
+d:as68 -l -u -s d: com3.s
+d:as68 -l -u -s d: com4.s
+d:lo68 -r -o com.68k com1.o com2.o com3.o com4.o

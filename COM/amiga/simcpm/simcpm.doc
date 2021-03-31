@@ -1,0 +1,232 @@
+               SimCPM - a CP/M simulator for the Amiga
+
+                   by Jim Cathey and Charlie Gibbs
+             incorporating modifications by Willi Kusche
+
+                    Version 2.3 - January 9, 1989
+
+
+     This is a FREELY-DISTRIBUTABLE program.  Spread it around all
+you like, just don't sell it, and please keep the entire package
+(including this file) intact.  If you find any bugs or make any
+changes, please let me know - I'd like to keep my copy up to date.
+
+     This program is based on an article by Jim Cathey which ran in
+Dr. Dobb's Journal from January to March 1986.  The original program
+emulated an 8080, including CP/M BIOS and BDOS calls, on a CP/M-68K
+system.  I have modified the operating system interface to run under
+AmigaDOS (from the CLI only, which shouldn't bother most CP/M-ers :-).
+
+     Willi Kusche maintains that the proper term is "emulator", rather
+than "simulator."  Although I agree, the original article called it a
+simulator, and the name seems to have stuck.
+
+     *** NEW FOR VERSION 2.0 ***  Due to popular demand, I have added
+support for the entire Z-80 instruction set (including undocumented
+opcodes).
+
+     WARNING!  This program uses the MOVE from SR instruction to set up
+the simulated Z-80 flags.  Therefore, it will not run on the 68010 or
+higher processors.  I didn't want to use the Exec's GetCC() call because
+it would be too slow.  As a work-around I have set up a EQUate in
+options.i which you can change to indicate that you are running on a
+68010, 68020, etc.  Re-assembling with x680x0 equated to 1 will cause
+all MOVE from SR instructions to be replaced by the corresponding MOVE
+from CCR instructions (actually faked with a DC.W in case your assembler
+doesn't support 68010 opcodes).  I have assembled a version with this
+flag set, and included it in the package; it is named SimCPM010.
+It should be possible to check whether x680x0 is equated to 2 and
+generate code optimized for a 68020 (as if it wouldn't be fast enough
+as is :-).
+
+     SimCPM only looks at the first 12 bytes of the FCB (drive code,
+file name, and file type) when opening a file.  The remainder of the
+FCB is neither altered nor checked, except for BDOS calls 17 (search
+for first file) and 18 (search for next file), which insert extent size
+and count information only.
+
+     If a reference is made to any drive other than A:, SimCPM will
+insert the string CPMx: ahead of any file name it uses.  For instance,
+if a program tries to open MYFILE.DAT on drive B:, SimCPM will try to
+open CPMB:MYFILE.DAT.  You can ASSIGN these simulated drives anywhere
+you want.  Drive A: will always go to the current directory, unless the
+user number is not zero.  If you specify any user number other than
+zero, it will be included, e.g. if the above example were opened under
+user 1, SimCPM will look for CPMB01:MYFILE.DAT.  If the file were on
+drive A under user 1, SimCPM will look for CPMA01:MYFILE.DAT.
+
+     The only built-in commands supported are USER and SAVE.  All
+others, such as DIR or TYPE, can easily be done using AmigaDOS
+equivalents.  You might want to RUN SimCPM so that the original
+CLI window will be available for this.
+
+     The EI and DI instructions are currently ignored.
+
+     The IN and OUT instructions are ignored except for ports 14 and
+15.  Access to the Amiga's serial port is provided through a simulated
+Intel 8251 USART, which is currently set up to run at 1200 bps.  Data
+is read from or written to port 14, and status input is simulated on
+port 15.  All output to port 15 (command) is ignored.  Note that CPU
+overhead may not permit an effective throughput of 1200 bps.  (Yup,
+you guessed it, it emulates the modem port on my old IMSAI.)
+
+     The following BDOS calls are not supported:
+
+          3 - reader input
+          4 - punch output
+         30 - set file attributes
+         all above 36
+
+     The only BIOS calls supported are those for program termination
+and console and list I/O.  (Low-level disk access could get scary.)
+If a program attempts to use an unsupported BIOS or BDOS call, an
+appropriate error message will be displayed, along with a register dump,
+and the program will be terminated.
+
+     Basic H19 terminal emulation (similar to a VT52) has been
+provided.  Escape sequences for cursor positioning, cursor to home,
+screen clearing, and insert and delete modes are translated to the
+corresponding Amiga sequences.  The program MANDOG.COM, which I
+wrote for my original CP/M (H19) system and copied here unchanged,
+demonstrates the cursor addressing capabilities of SimCPM.  Any escape
+sequences that SimCPM can't recognize are passed through unchanged.
+You can disable all escape sequence translation by changing the equated
+value "h19" (in options.i) to from 1 to 0 and re-assembling.
+
+     To speed up console output for programs which write one character
+at a time, I have included a buffered output option.  If you include
+the -b switch on the command-line parameter, all console output will be
+held until one of the following events occurs:
+
+          - a carriage return, line feed, or bell character is written
+          - the buffer (currently 2K) becomes full
+          - a BIOS or BDOS call other than console output is made.
+
+It should be possible to use buffered output in just about any program.
+Note that if a program uses the "console output string" function (BDOS
+call 9), the entire string is written in a single operation even when
+buffering is not requested.
+
+     If you include the -t switch on the command line, instruction
+and/or BIOS/BDOS tracing is available.  Simulations run somewhat slower
+with this flag set, even if tracing is not currently active.  Tracing
+is done using 8080 mnemonics by default.  If you want Z-80 mnemonics,
+use -z instead of -t.  If both -z and -t are specified, -t will be
+ignored.
+
+     If the trace switch has been specified, SimCPM will prompt you
+for starting and ending addresses for tracing, and whether you want
+BIOS/BDOS calls traced.  Simulation starts with tracing disabled.  When
+SimCPM executes an instruction at the starting address, tracing is
+turned on.  All Z-80 registers and the top four stack entries, as well
+as the current instruction, are displayed for each instruction until
+the ending address is reached.  Tracing is then disabled until the
+start address is again encountered.  After displaying 8 instructions,
+execution is suspended; enter S to stop tracing and continue executing,
+Q to quit the program, C to change the starting and ending addresses
+for tracing, or any other key to trace the next 8 instructions.
+
+     If you have requested BIOS/BDOS call tracing, the message
+
+          BIOS CALL nn (hex) AT aaaa
+or
+          BDOS CALL nn (hex) AT aaaa
+
+will be displayed each time a BIOS or BDOS call is made.  The BDOS
+call number (contents of register C in hex) will replace "nn" for BDOS
+calls, while BIOS calls will set "nn" to a sequential number starting
+at 01 for program termination, 02 for console status, etc.  The address
+where the call is made will be taken from the top of the stack and
+displayed in place of "aaaa".
+
+     List output is sent to PRT:RAW.  This ensures that no newline
+translation will take place.  The printer is not opened until the first
+attempt is made to access it.  If the printer cannot be opened for any
+reason, the program will be terminated.  At program termination the
+printer will be closed if it was used.
+
+     If SimCPM is brought up with no command-line parameters, it will
+present the standard CP/M A> prompt.  At this point you can run CP/M
+.COM files just like on a normal CP/M system.  The command line will
+be scanned for up to two FCBs and the tail will be passed to the
+program.  When the program terminates, the A> prompt will be
+re-displayed.  To return to AmigaDOS, enter a control-C (CP/M warm
+boot) at the A> prompt.
+
+     If command-line parameters are given, they will be passed to
+SimCPM as if they had been entered at the A> prompt.  When the program
+terminates, SimCPM will automatically return to AmigaDOS.  This allows
+you to run CP/M programs from an EXECUTE file.
+
+     Here are some sample invocations of SimCPM:
+
+          simcpm
+               Loads the simulator, which presents the A> prompt and
+               waits for CP/M commands.  Type control-C at the prompt
+               to exit.
+
+          simcpm -b
+               Same as above, except console output buffering is used.
+
+          simcpm myprog
+               Loads the simulator, which loads and runs the CP/M
+               program MYPROG.COM.  When MYPROG terminates, SimCPM
+               returns to AmigaDOS.
+
+          simcpm -t myprog
+               Same as above, except that before MYPROG.COM is run,
+               you will be prompted for trace parameters.
+
+          simcpm -z myprog
+               Same as above, except that Z-80 mnemonics will be used
+               for tracing, rather than 8080 mnemonics.
+
+          simcpm mbasic basprog
+               Loads the simulator, which loads Microsoft BASIC-80 (if
+               you have it), which in turn loads and runs BASPROG.BAS.
+               When BASPROG issues a SYSTEM command, SimCPM returns
+               to AmigaDOS.
+
+          simcpm -b mbasic basprog
+               Same as above, but with console output buffering.  Since
+               MBASIC does all console I/O one character at a time, the
+               buffered option can speed it up considerably.
+
+     I have included two CP/M programs for demonstration purposes.
+TESTPROG.COM is a simple "hello, world" program (try it using the
+trace option), while MANDOG.COM demonstrates cursor addressing for
+an emulated H19 terminal.
+
+     SimCPM consists of two source modules, SIMCPM1.ASM and
+SIMCPM2.ASM.  No include files are needed, although amiga.lib is
+required for linking.  The makefile is set up to use my own assembler,
+A68k, and BLink - it should be relatively easy to adapt it to whatever
+assembler and linker you are using.
+
+
+     Special thanks to:
+
+       Jim Cathey for his article in Dr. Dobb's Journal -
+        it provided the starting point for this program.
+
+       Willi Kusche (for new ideas and corrections of my Z-80 code)
+       SYSOP
+       KMMM Pascal BBS
+       (609) 232-0773
+       24 hours a day
+       7 days a week
+       300/1200/2400/9600 bps
+       9600 is USRobotics HST protocol
+       Passing a simple IQ test required for full access
+
+
+     Please address any kudos, flames, etc. to
+
+          Charlie Gibbs
+          2121 Rindall Avenue
+          Port Coquitlam, B.C.
+          Canada
+          V3C 1T9
+
+or to Larry Phillips or Jeff Lydiatt on CompuServe or Usenet.
+(I don't have the time or money to live there myself.)

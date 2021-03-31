@@ -1,0 +1,2851 @@
+;	z80 emulator kernel
+
+zekver: 	dc.b	'Zek   Ver: 00041   Date: 25-Sep-88 21:11:05 ',0
+
+;	This source code is released into the public domain for
+;	non-profit use only.
+;	Copyright (C) 1988, Ulf Nordquist. All Rights Reserved !
+;	Ulf Nordquist
+;	Brunnehagen 36
+;	417 47 Gothenburg
+;	Sweden
+
+;	move.w sr,dn is used, I am sorry
+;	self modifying code is used
+
+;	mbasic test loop
+;	10 for i%=1 to 1000
+;	20 next i%
+;	880714 : 9.2s, 8.2s
+
+;	history
+;	871018 : moved from ze
+;	871025 : remove word access at odd bytes
+;	871105 : mode z80opced to zeked
+;		 change pc and sp to be relative to z80pgmptr during
+;		   emulation
+;	871113 : emuret
+;	871120 : exit when unimplemented opcodes
+;	871122 : emuret checks for errors
+;	871218 : bug1 in ex (sp),hl
+;		 bug2 in ld hl,(nn)
+;	871220 : bug3 in ld (nn),hl
+;	871221 : bug4 in nop (embarrassing)
+;		 bug5 in inc h,d,b  dec h,d,b  djnz
+;		 bug6 in adc sbc
+;	871223 : bug7 in daa
+;		 $dd & $fd two byte opcodes emulated
+;	880109 : bug8 sign extension in pc & sp
+;		 bug9 in adc sbc
+;	880110 : bug10 in inc h,d,b  dec h,d,b
+;		 bug11 in djnz
+;	880120 : bug12 in setfflgnc, always clr cy
+;	880221 : displacement in $dd & $fd opcodes
+;	880222 : move emulation of $cb to zekcb
+;		 move emulation of $dd and $fd to zekdd
+;	880430 : ver 00001
+;	880710 : startcnt
+;		 modify code in main emu loop when debug count
+;		 stopcnt
+;		 savecnt, only as direct memory image
+;	880711 : emulation macros
+;	880713 : starttrc, stoptrc
+;		 setflgl with partab to set v flag after logical inst
+;		 mbasic works now
+;	880714 : no zero option in emuloop counter
+;		 rearrange top of emuloop
+;		 give loop time 8.2s
+;	880819 : move macros to zekmc
+;	880821 : use addhlrr, ldindrr, ldrrind macros
+
+;	globals from this module
+
+		xdef	bdosoffs
+		xdef	biosoffs
+		xdef	cboffs
+		xdef	cntbuf
+		xdef	ddoffs
+		xdef	edoffs
+		xdef	emuinit
+		xdef	emuret
+		xdef	fdoffs
+		xdef	setflg
+		xdef	setflgl
+		xdef	setflgnc
+		xdef	savecnt
+		xdef	startcnt
+		xdef	starttrc
+		xdef	stopcnt
+		xdef	stoptrc
+		xdef	z80emu
+		xdef	z80emu1
+		xdef	zekver
+
+;	externals from zeked
+
+		xref	z80opced
+		xref	edinit
+		xref	edstart
+		xref	edstop
+
+;	externals from zekcb
+
+		xref	z80opccb
+		xref	cbinit
+		xref	cbstart
+		xref	cbstop
+
+;	externals from zekdd
+
+		xref	z80opcdd
+		xref	z80opcfd
+		xref	ddinit
+		xref	ddstart
+		xref	ddstop
+
+;	externals from ce
+
+		xref	inpbuftab
+		xref	inppmttab
+		xref	reqstr
+
+;	externals from cz
+
+		xref	bth16
+		xref	error4
+		xref	glflgs
+		xref	oserr
+		xref	xalloc
+		xref	z80pgmsiz
+		xref	z80opc2ni
+		xref	z80opcni
+		xref	_DOSBase
+
+;	externals from dos.library
+
+		xref	_LVOClose
+		xref	_LVOOpen
+		xref	_LVOWrite
+
+;	equates
+
+;	from intuition.i
+
+MODE_NEWFILE	equ	1006
+
+;	for debug
+
+strbufsiz	equ	31		;max string gadget len+1, total
+
+;	count
+
+bdosoffs	equ	5*256		;offset to bdos buffer
+biosoffs	equ	bdosoffs+128	;bios
+cntsiz		equ	256+4*256+256	;total buffer size
+cboffs		equ	1*256		;offset to cb buffer
+ddoffs		equ	2*256		;dd
+edoffs		equ	3*256		;ed
+fdoffs		equ	4*256		;fd
+
+;	trace
+
+trcsiz		equ	1024		;trace buffer size
+
+;	forward references
+
+cntfilesize	equ	strbufsiz	;length of savefile name string
+trcfilesize	equ	strbufsiz	;length of savefile name string
+maxtrccnt	equ	trcsiz-10	;max count in trace buffer
+
+;	ascii
+
+lf		equ	10
+
+;	macros
+
+		include zekmc.i
+
+		ds.w	0			;alignment
+
+;	emuinit
+;	initialize emulation parameters, only called once as init
+;	also toggle bra <-> addq
+
+emuinit:	move.l	#z80emusw,a6
+		move.w	(a6),d1                 ;get bra.s
+		move.w	cntinst,(a6)            ;put addq
+		move.w	d1,cntinst		;save bra.s
+		jsr	cbinit
+		jsr	ddinit
+		jmp	edinit
+
+;	z80emu
+;	entry : d0.l=fa'fa, d1.l=hl'hl, d2.l=de'de, d3.l=bc'bc
+;		d4.w=ix, d5.w=iy
+;		d7.l=number of instructions to run
+;		a0.w=pc, a1.w=sp, a4.l=ptr z80 program area start
+;		the program area must be configured as this:
+;		relative start	0      $8000	$ffff
+;				|________|________|
+;		pc	      $8000	 0	$7fff
+;		d0 flags 15 14 13 12 11 10  9  8
+;			  s  z	-  h  -  v  n  c
+;	internal use : d4.l=iyix
+;		       a2.l=ptr to scratch, a3.l=z80opctab,
+;		       a4.l=ptr middle of z80 pgm area
+;	scratch use : d5.l, d6.l, a5.l, a6.l
+;	exit :	d0.l=fa'fa, d1.l=hl'hl, d2.l=de'de, d3.l=bc'bc
+;		d4.w=ix, d5.w=iy
+;		a0.w=pc, a1.w=sp
+;	limitations
+;	1.  flags : h and n flag is always 0
+;	2.  nops  : $d3nn out (n),a, $f3 di, $fb ei
+;	3.  $76   halt exits emulator, but nothing more
+;	4.  $dbnn in a,(n) always inputs 0
+;	5.  $cb   limitations found in module zekcb
+;	6.  $dd   limitations found in module zekdd
+;	7.  $ed   limitations found in module zeked
+;	8.  $fd   limitations found in module zekdd
+
+z80emu: 	move.l	#z80opctab,a3		;ptr to opcode tab
+		move.l	#scratch,a2
+		move.l	#z80pgmsiz,d6
+		lsr.l	#1,d6			;/2
+		add.l	d6,a4			;ptr middle of pgm
+		swap	d4
+		move.w	d5,d4			;iy
+		swap	d4			;set up iyix
+		bra.s	z80emu2 		;skip after inst part
+
+;	after instruction
+
+z80emu1:	subq.l	#1,d7
+		beq.s	z80opc76		;if halt
+
+;	decode instruction
+
+z80emu2:	moveq.l #0,d6
+		move.b	0(a4,a0.w),d6           ;opcode
+z80emusw:	bra.s	count			;replaced with addq.l #1,a0
+z80emu3:	asl.w	#2,d6			;4 bytes per entry
+		move.l	0(a3,d6.l),a5
+		jmp	(a5)                    ;do instruction
+
+;	exit emulation, halt
+
+z80opc76:	swap	d4
+		move.w	d4,d5			;iy
+		swap	d4			;ix
+		rts
+
+;	if debug count or trace mode
+
+count:		btst.b	#5,glflgs
+		beq.s	count1			;if no cnt
+
+;	count
+
+		move.l	cntbuf,a5
+		addq.b	#1,0(a5,d6.w)           ;inc cnt
+		bne.s	count1			;if not max cnt
+		subq.b	#1,0(a5,d6.w)           ;restore max cnt
+count1: 	tst.l	handle3
+		beq.s	count2			;if no trace
+
+;	trace
+
+		movem.l d0-d3/a0-a1,-(a7)
+		move.w	a0,d0			;pc
+		move.l	trcptr,a0
+		jsr	bth16
+		move.b	#lf,(a0)+               ;line end
+		move.l	a0,trcptr
+		move.l	trccnt,d0
+		addq.l	#5,d0			;hex no + lf
+		move.l	d0,trccnt
+		cmp.w	#maxtrccnt,d0
+		blt.s	count3			;if buffer not full
+
+;	buffer full, write to file
+
+		move.l	handle3,d1
+		move.l	trcbuf,d2
+		move.l	trccnt,d3
+		move.l	_DOSBase,a6
+		jsr	_LVOWrite(a6)
+		move.l	trcbuf,trcptr
+		clr.l	trccnt			;reinit
+count3: 	movem.l (a7)+,d0-d3/a0-a1
+count2: 	addq.l	#1,a0			;pc
+		bra	z80emu3 		;cont emu
+
+;	start/stop/savecnt and start/stoptrc
+;	is called by minpeh and can *only*
+;	chg : d0,d1,d2,d3
+;	      a0,a1,a2,a3,a6
+;	it is furthermore called by a menu handling routine and can *only*
+;	chg : d3
+;	      a0,a1,a2,a3,a6
+
+;	startcnt
+;	initialize for count of opcode, bdos & bios
+;	exit : z=success
+
+startcnt:	btst.b	#5,glflgs
+		bne.s	startcnt3		;if already counting
+		movem.l d0-d2,-(a7)
+		tst.l	handle3
+		bne.s	startcnt4		;if trace on
+
+;	insert jump into emulator loop
+
+		bsr	emuinit
+
+;	rest of start code
+
+startcnt4:	move.l	cntbuf,d0
+		bne.s	startcnt1		;if alloc
+		move.l	#cntsiz,d0
+		jsr	xalloc
+		bne.s	startcnt1		;if we got memory
+		jmp	error4
+startcnt1:	bset.b	#5,glflgs		;flg counting
+		move.l	d0,cntbuf		;ptr
+		move.w	#cntsiz-1,d1
+		move.l	d0,a0			;cntbuf
+startcnt2:	clr.b	(a0)+
+		dbra	d1,startcnt2		;clr cntbuf
+		movem.l (a7)+,d0-d2
+startcnt3:	rts
+
+;	stopcnt
+;	stop count of opcode, bdos & bios
+;	exit : z=already stopped
+
+stopcnt:	btst.b	#5,glflgs
+		beq.s	stopcnt1		;if already stopped
+		bclr.b	#5,glflgs		;flg stopped
+		tst.l	handle3
+		bne.s	stopcnt1		;if trace on
+		movem.l d1,-(a7)
+		bsr	emuinit
+		movem.l (a7)+,d1
+stopcnt1:	rts
+
+;	savecnt
+;	save count of opcode, bdos & bios
+
+savecnt:	movem.l d0-d4/a4-a5,-(a7)
+
+;	set up buffer and prompt tables and get file name
+
+		move.l	#inpbuftab,a0
+		move.l	a0,a2
+		move.w	#cntfilesize,(a0)+      ;size
+		move.l	#cntfile,(a0)+          ;ptr buf
+		move.w	#0,(a0)                 ;end
+		move.l	#inppmttab,a0
+		move.l	a0,a4
+		move.l	#cntpmt,(a0)+           ;prompt
+		move.l	#0,(a0)                 ;end
+		jsr	reqstr
+		cmp.b	#2,d2
+		beq.s	savecnt1		;if cancel
+
+;	open file
+
+		move.l	#cntfile,d1		;buf
+		move.l	#MODE_NEWFILE,d2
+		move.l	_DOSBase,a6
+		jsr	_LVOOpen(a6)
+		move.l	d0,d4			;handle
+		beq.s	savecnt1		;if failure
+
+;	write buffer and close file
+
+		move.l	d4,d1			;handle
+		move.l	cntbuf,d2
+		move.l	#cntsiz,d3
+		move.l	_DOSBase,a6
+		jsr	_LVOWrite(a6)
+		move.l	d4,d1			;handle
+		jsr	_LVOClose(a6)
+savecnt1:	movem.l (a7)+,d0-d4/a4-a5
+		rts
+
+;	starttrc
+;	start trace of execution
+;	exit : z=no start
+
+starttrc:	movem.l d0-d4/a4-a5,-(a7)
+		btst.b	#5,glflgs
+		bne.s	starttrc3		;if debug count
+		bsr	emuinit
+
+;	set up buffer and prompt tables and get file name
+
+starttrc3:	move.l	#inpbuftab,a0
+		move.l	a0,a2
+		move.w	#trcfilesize,(a0)+      ;size
+		move.l	#trcfile,(a0)+          ;ptr buf
+		move.w	#0,(a0)                 ;end
+		move.l	#inppmttab,a0
+		move.l	a0,a4
+		move.l	#trcpmt,(a0)+           ;prompt
+		move.l	#0,(a0)                 ;end
+		jsr	reqstr
+		cmp.b	#2,d2
+		beq.s	starttrc1		;if cancel
+
+;	open file
+
+		move.l	#trcfile,d1		;buf
+		move.l	#MODE_NEWFILE,d2
+		move.l	_DOSBase,a6
+		jsr	_LVOOpen(a6)
+		move.l	d0,handle3		;handle
+		beq.s	starttrc1		;if failure
+
+;	sucessful open of file
+
+		move.l	trcbuf,d0
+		bne.s	starttrc2		;if alloc
+		move.l	#trcsiz,d0
+		jsr	xalloc
+		bne.s	starttrc2		;if we got memory
+		jmp	error4
+starttrc2:	clr.l	trccnt
+		move.l	d0,trcbuf		;ptr start
+		move.l	d0,trcptr		;ptr current
+starttrc1:	movem.l (a7)+,d0-d4/a4-a5
+		rts
+
+;	stoptrc
+;	stop trace of execution and close file
+;	exit : z=no close
+
+stoptrc:	movem.l d0-d2,-(a7)
+		move.l	handle3,d1
+		beq.s	stoptrc1		;if no log file open
+		btst.b	#5,glflgs
+		bne.s	stoptrc3		;if debug count
+		bsr	emuinit
+
+;	write buffer and close file
+
+stoptrc3:	move.l	trcbuf,d2
+		move.l	trccnt,d3
+		beq.s	stoptrc2		;if buffer empty
+		move.l	_DOSBase,a6
+		jsr	_LVOWrite(a6)
+stoptrc2:	move.l	handle3,d1
+		jsr	_LVOClose(a6)
+		clr.l	handle3 		;flg no trace
+		move.l	#1,d0			;flg success
+stoptrc1:	movem.l (a7)+,d0-d2
+		rts
+
+;	not implemented opcode
+
+z80emuni:	swap	d4
+		move.w	d4,d5			;iy
+		swap	d4			;ix
+		addq.l	#4,a7			;ret addr
+		jmp	z80opcni
+
+;	emuret
+;	return from cpm system calls
+
+emuret: 	or.b	d6,d6
+		beq	z80opcc9		;if no error
+		swap	d4
+		move.w	d4,d5			;iy
+		swap	d4			;ix
+		addq.l	#4,a7			;ret addr
+		jmp	oserr
+
+;	routines for each opcode
+
+;	$00 nop
+;	$40 ld b,b
+;	$49 ld c,c
+;	$52 ld d,d
+;	$5b ld e,e
+;	$64 ld h,h
+;	$6d ld l,l
+;	$7f ld a,a
+;	$f3 di
+;	$fb ei
+
+z80opcfb:
+z80opcf3:
+z80opc7f:
+z80opc6d:
+z80opc64:
+z80opc5b:
+z80opc52:
+z80opc49:
+z80opc40:
+z80opc00:	bra	z80emu1
+
+;	$01 ld bc,nn
+
+z80opc01:	ldrrimm d3
+		bra	z80emu1
+
+;	$02 ld (bc),a
+
+z80opc02:	move.b	d0,0(a4,d3.w)           ;a
+		bra	z80emu1
+
+;	$03 inc bc
+
+z80opc03:	addq.w	#1,d3
+		bra	z80emu1
+
+;	$04 inc b
+
+z80opc04:	inchr	d3
+		bra	z80emu1
+
+;	$05 dec b
+
+z80opc05:	dechr	d3
+		bra	z80emu1
+
+;	$06 ld b,n
+
+z80opc06:	ldhrimm d3
+		bra	z80emu1
+
+;	$07 rlca
+
+z80opc07:	rol.b	#1,d0
+		bset.l	#8,d0			;set c
+		bcs	z80emu1 		;if c set
+		bclr.l	#8,d0			;clr c
+		bra	z80emu1
+
+;	$08 ex af,af'
+
+z80opc08:	swap	d0
+		bra	z80emu1
+
+;	$09 add hl,bc
+
+z80opc09:	addhlrr d3
+		bra	z80emu1
+
+;	$0a ld a,(bc)
+
+z80opc0a:	move.b	0(a4,d3.w),d0           ;a
+		bra	z80emu1
+
+;	$ob dec bc
+
+z80opc0b:	subq.w	#1,d3
+		bra	z80emu1
+
+;	$0c inc c
+
+z80opc0c:	addq.b	#1,d3
+		bsr	setflgnc
+		bra	z80emu1
+
+;	$0d dec c
+
+z80opc0d:	subq.b	#1,d3
+		bsr	setflgnc
+		bra	z80emu1
+
+;	$0e ld c,n
+
+z80opc0e:	move.b	0(a4,a0.w),d3           ;new b
+		addq.l	#1,a0
+		bra	z80emu1
+
+;	$0f rrca
+
+z80opc0f:	ror.b	#1,d0
+		bset.l	#8,d0			;set c
+		bcs.s	z80opc0f1		;if c set
+		bclr.l	#8,d0			;clr c
+z80opc0f1:	bra	z80emu1
+
+;	$10 djnz e
+
+z80opc10:	addq.l	#1,a0			;pc
+		move.b	d3,d6
+		clr.b	d3
+		sub.w	#$0100,d3
+		bne.s	z80opc101		;if b<>0
+		move.b	d6,d3			;restore c
+		bra	z80emu1
+z80opc101:	move.b	d6,d3			;restore c
+		move.b	-1(a4,a0.w),d6          ;offset
+		ext.w	d6
+		add.w	d6,a0			;jump
+		bra	z80emu1
+
+;	$11 ld de,nn
+
+z80opc11:	ldrrimm d2
+		bra	z80emu1
+
+;	$12 ld (de),a
+
+z80opc12:	move.b	d0,0(a4,d2.w)           ;a
+		bra	z80emu1
+
+;	$13 inc de
+
+z80opc13:	addq.w	#1,d2
+		bra	z80emu1
+
+;	$14 inc d
+
+z80opc14:	inchr	d2
+		bra	z80emu1
+
+;	$15 dec d
+
+z80opc15:	dechr	d2
+		bra	z80emu1
+
+;	$16 ld d,n
+
+z80opc16:	ldhrimm d2
+		bra	z80emu1
+
+;	$17 rla
+
+z80opc17:	and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc171		;if c=0
+		or.b	#%00010000,ccr		;set x
+z80opc171:	roxl.b	#1,d0
+		bset.l	#8,d0			;set c
+		bcs	z80emu1 		;if c set
+		bclr.l	#8,d0			;clr c
+		bra	z80emu1
+
+;	$18 jr e
+
+z80opc18:	move.b	0(a4,a0.w),d6           ;offset
+		addq.l	#1,a0
+		ext.w	d6
+		add.w	d6,a0			;jump
+		bra	z80emu1
+
+;	$19 add hl,de
+
+z80opc19:	addhlrr d2
+		bra	z80emu1
+
+;	$1a ld a,(de)
+
+z80opc1a:	move.b	0(a4,d2.w),d0           ;a
+		bra	z80emu1
+
+;	$1b dec de
+
+z80opc1b:	subq.w	#1,d2
+		bra	z80emu1
+
+;	$1c inc e
+
+z80opc1c:	addq.b	#1,d2
+		bsr	setflgnc
+		bra	z80emu1
+
+;	$1d dec e
+
+z80opc1d:	subq.b	#1,d2
+		bsr	setflgnc
+		bra	z80emu1
+
+;	$1e ld e,n
+
+z80opc1e:	move.b	0(a4,a0.w),d2           ;new e
+		addq.l	#1,a0
+		bra	z80emu1
+
+;	$1f rra
+
+z80opc1f:	and.b	#0,ccr			;clr x
+		btst.l	#8,d0
+		beq.s	z80opc1f1		;if c=0
+		or.b	#$ff,ccr		;set x
+z80opc1f1:	roxr.b	#1,d0
+		bset.l	#8,d0			;set c
+		bcs.s	z80opc1f2		;if c set
+		bclr.l	#8,d0			;clr c
+z80opc1f2:	bra	z80emu1
+
+;	$20 jr nz,e
+
+z80opc20:	move.b	0(a4,a0.w),d6           ;offset
+		addq.l	#1,a0
+		btst.l	#14,d0
+		bne	z80emu1 		;if z=1
+		ext.w	d6
+		add.w	d6,a0			;jump
+		bra	z80emu1
+
+;	$21 ld hl,nn
+
+z80opc21:	ldrrimm d1
+		bra	z80emu1
+
+;	$22 ld (nn),hl
+
+z80opc22:	ldindrr d1
+		bra	z80emu1
+
+;	$23 inc hl
+
+z80opc23:	addq.w	#1,d1
+		bra	z80emu1
+
+;	$24 inc h
+
+z80opc24:	inchr	d1
+		bra	z80emu1
+
+;	$25 dec h
+
+z80opc25:	dechr	d1
+		bra	z80emu1
+
+;	$26 ld h,n
+
+z80opc26:	ldhrimm d1
+		bra	z80emu1
+
+;	$27 daa
+
+z80opc27:	and.b	#0,ccr			;clr x
+		moveq.l #0,d6
+		abcd.b	d6,d0			;bcd add 0
+		bsr	setflg
+		bra	z80emu1
+
+;	$28 jr z,e
+
+z80opc28:	move.b	0(a4,a0.w),d6           ;offset
+		addq.l	#1,a0
+		btst.l	#14,d0
+		beq	z80emu1 		;if z=0
+		ext.w	d6			;make word
+		add.w	d6,a0			;jump
+		bra	z80emu1
+
+;	$29 add hl,hl
+
+z80opc29:	addhlrr d1
+		bra	z80emu1
+
+;	$2a ld hl,(nn)
+
+z80opc2a:	ldrrind d1
+		bra	z80emu1
+
+;	$2b dec hl
+
+z80opc2b:	subq.w	#1,d1
+		bra	z80emu1
+
+;	$2c inc l
+
+z80opc2c:	addq.b	#1,d1
+		bsr	setflgnc
+		bra	z80emu1
+
+;	$2d dec l
+
+z80opc2d:	subq.b	#1,d1
+		bsr	setflgnc
+		bra	z80emu1
+
+;	$2e ld l,n
+
+z80opc2e:	move.b	0(a4,a0.w),d1           ;new l
+		addq.l	#1,a0
+		bra	z80emu1
+
+;	$2f cpl
+
+z80opc2f:	eor.b	#$ff,d0
+		bra	z80emu1
+
+;	$30 jr nc,e
+
+z80opc30:	move.b	0(a4,a0.w),d6           ;offset
+		addq.l	#1,a0
+		btst.l	#8,d0
+		bne	z80emu1 		;if c=1
+		ext.w	d6			;make word
+		add.w	d6,a0			;jump
+		bra	z80emu1
+
+;	$31 ld sp,nn
+
+z80opc31:	ldrrimm d6
+		move.w	d6,a1			;sp
+		bra	z80emu1
+
+;	$32 ld (nn),a
+
+z80opc32:	ldrrimm d6
+		move.b	d0,0(a4,d6.w)           ;a
+		bra	z80emu1
+
+;	$33 inc sp
+
+z80opc33:	addq.l	#1,a1
+		bra	z80emu1
+
+;	$34 inc (hl)
+
+z80opc34:	addq.b	#1,0(a4,d1.w)
+		bsr	setflgnc
+		bra	z80emu1
+
+;	$35 dec (hl)
+
+z80opc35:	subq.b	#1,0(a4,d1.w)
+		bsr	setflgnc
+		bra	z80emu1
+
+;	$36 ld (hl),n
+
+z80opc36:	move.b	0(a4,a0.w),d6           ;n
+		addq.l	#1,a0
+		move.b	d6,0(a4,d1.w)
+		bra	z80emu1
+
+;	$37 scf
+
+z80opc37:	bset.l	#8,d0
+		bra	z80emu1
+
+;	$38 jr c,e
+
+z80opc38:	move.b	0(a4,a0.w),d6           ;offset
+		addq.l	#1,a0
+		btst.l	#8,d0
+		beq	z80emu1 		;if c=0
+		ext.w	d6			;make word
+		add.w	d6,a0			;jump
+		bra	z80emu1
+
+;	$39 add hl,sp
+
+z80opc39:	move.w	a1,d6			;sp
+		addhlrr d6
+		bra	z80emu1
+
+;	$3a ld a,(nn)
+
+z80opc3a:	ldrrimm d6
+		move.b	0(a4,d6.w),d0           ;a
+		bra	z80emu1
+
+;	$3b dec sp
+
+z80opc3b:	subq.l	#1,a1
+		bra	z80emu1
+
+;	$3c inc a
+
+z80opc3c:	addq.b	#1,d0
+		bsr	setflgnc
+		bra	z80emu1
+
+;	$3d dec a
+
+z80opc3d:	subq.b	#1,d0
+		bsr	setflgnc
+		bra	z80emu1
+
+;	$3e ld a,n
+
+z80opc3e:	move.b	0(a4,a0.w),d0           ;new a
+		addq.l	#1,a0
+		bra	z80emu1
+
+;	$3f ccf
+
+z80opc3f:	bchg.l	#8,d0
+		bra	z80emu1
+
+;	$40 ld b,b is nop
+
+;	$41 ld b,c
+
+z80opc41:	move.b	d3,d6
+		rol.w	#8,d3			;b<->c
+		move.b	d6,d3			;restore c
+		bra	z80emu1
+
+;	$42 ld b,d
+
+z80opc42:	move.b	d3,d6
+		move.w	d2,d3			;d->b
+		move.b	d6,d3			;restore c
+		bra	z80emu1
+
+;	$43 ld b,e
+
+z80opc43:	rol.w	#8,d3			;b<->c
+		move.b	d2,d3			;e->b
+		rol.w	#8,d3			;b<->c, restore
+		bra	z80emu1
+
+;	$44 ld b,h
+
+z80opc44:	move.b	d3,d6
+		move.w	d1,d3			;h->b
+		move.b	d6,d3			;restore c
+		bra	z80emu1
+
+;	$45 ld b,l
+
+z80opc45:	rol.w	#8,d3			;b<->c
+		move.b	d1,d3			;l->b
+		rol.w	#8,d3			;b<->c, restore
+		bra	z80emu1
+
+;	$46 ld b,(hl)
+
+z80opc46:	rol.w	#8,d3			;b<->c
+		move.b	0(a4,d1.w),d3           ;b
+		rol.w	#8,d3			;b<->c, restore
+		bra	z80emu1
+
+;	$47 ld b,a
+
+z80opc47:	rol.w	#8,d3			;b<->c
+		move.b	d0,d3			;a->b
+		rol.w	#8,d3			;b<->c, restore
+		bra	z80emu1
+
+;	$48 ld c,b
+
+z80opc48:	move.w	d3,(a2)
+		move.b	(a2),d3                 ;b->c
+		bra	z80emu1
+
+;	$49 ld c,c is nop
+
+;	$4a ld c,d
+
+z80opc4a:	move.w	d2,(a2)
+		move.b	(a2),d3                 ;d->c
+		bra	z80emu1
+
+;	$4b ld c,e
+
+z80opc4b:	move.b	d2,d3			;e->c
+		bra	z80emu1
+
+;	$4c ld c,h
+
+z80opc4c:	move.w	d1,(a2)
+		move.b	(a2),d3                 ;h->c
+		bra	z80emu1
+
+;	$4d ld c,l
+
+z80opc4d:	move.b	d1,d3			;l->c
+		bra	z80emu1
+
+;	$4e ld c,(hl)
+
+z80opc4e:	move.b	0(a4,d1.w),d3           ;c
+		bra	z80emu1
+
+;	$4f ld c,a
+
+z80opc4f:	move.b	d0,d3			;a->c
+		bra	z80emu1
+
+;	$50 ld d,b
+
+z80opc50:	move.b	d2,d6
+		move.w	d3,d2			;b->d
+		move.b	d6,d2			;restore e
+		bra	z80emu1
+
+;	$51 ld d,c
+
+z80opc51:	rol.w	#8,d2			;d<->e
+		move.b	d3,d2			;c->d
+		rol.w	#8,d2			;d<->e, restore
+		bra	z80emu1
+
+;	$52 ld d,d is nop
+
+;	$53 ld d,e
+
+z80opc53:	move.b	d2,d6
+		rol.w	#8,d2			;d<->e
+		move.b	d6,d2			;restore e
+		bra	z80emu1
+
+;	$54 ld d,h
+
+z80opc54:	move.b	d2,d6
+		move.w	d1,d2			;h->d
+		move.b	d6,d2			;restore e
+		bra	z80emu1
+
+;	$55 ld d,l
+
+z80opc55:	rol.w	#8,d2			;d<->e
+		move.b	d1,d2			;l->d
+		rol.w	#8,d2			;d<->e, restore
+		bra	z80emu1
+
+;	$56 ld d,(hl)
+
+z80opc56:	rol.w	#8,d2			;d<->e
+		move.b	0(a4,d1.w),d2           ;d
+		rol.w	#8,d2			;d<->e, restore
+		bra	z80emu1
+
+;	$57 ld d,a
+
+z80opc57:	rol.w	#8,d2			;d<->e
+		move.b	d0,d2			;a->d
+		rol.w	#8,d2			;d<->e, restore
+		bra	z80emu1
+
+;	$58 ld e,b
+
+z80opc58:	move.w	d3,(a2)
+		move.b	(a2),d2                 ;b->e
+		bra	z80emu1
+
+;	$59 ld e,c
+
+z80opc59:	move.b	d3,d2			;c->e
+		bra	z80emu1
+
+;	$5a ld e,d
+
+z80opc5a:	move.w	d2,(a2)
+		move.b	(a2),d2                 ;d->e
+		bra	z80emu1
+
+;	$5b ld e,e is nop
+
+;	$5c ld e,h
+
+z80opc5c:	move.w	d1,(a2)
+		move.b	(a2),d2                 ;h->e
+		bra	z80emu1
+
+;	$5d ld e,l
+
+z80opc5d:	move.b	d1,d2			;l->e
+		bra	z80emu1
+
+;	$5e ld e,(hl)
+
+z80opc5e:	move.b	0(a4,d1.w),d2           ;e
+		bra	z80emu1
+
+;	$5f ld e,a
+
+z80opc5f:	move.b	d0,d2			;a->e
+		bra	z80emu1
+
+;	$60 ld h,b
+
+z80opc60:	move.b	d1,d6
+		move.w	d3,d1			;b->h
+		move.b	d6,d1			;restore l
+		bra	z80emu1
+
+;	$61 ld h,c
+
+z80opc61:	rol.w	#8,d1			;h<->l
+		move.b	d3,d1			;c->h
+		rol.w	#8,d1			;h<->l, restore
+		bra	z80emu1
+
+;	$62 ld h,d
+
+z80opc62:	move.b	d1,d6
+		move.w	d2,d1			;d->h
+		move.b	d6,d1			;restore l
+		bra	z80emu1
+
+;	$63 ld h,e
+
+z80opc63:	rol.w	#8,d1			;h<->l
+		move.b	d2,d1			;e->h
+		rol.w	#8,d1			;h<->l, restore
+		bra	z80emu1
+
+;	$64 ld h,h is nop
+
+;	$65 ld h,l
+
+z80opc65:	move.b	d1,d6
+		rol.w	#8,d1			;h<->l
+		move.b	d6,d1			;restore l
+		bra	z80emu1
+
+;	$66 ld h,(hl)
+
+z80opc66:	move.b	d1,d6
+		move.b	0(a4,d1.w),d1           ;h
+		rol.w	#8,d1			;h<->l
+		move.b	d6,d1			;resore l
+		bra	z80emu1
+
+;	$67 ld h,a
+
+z80opc67:	rol.w	#8,d1			;h<->l
+		move.b	d0,d1			;a->h
+		rol.w	#8,d1			;h<->l, restore
+		bra	z80emu1
+
+;	$68 ld l,b
+
+z80opc68:	move.w	d3,(a2)
+		move.b	(a2),d1                 ;b->l
+		bra	z80emu1
+
+;	$69 ld l,c
+
+z80opc69:	move.b	d3,d1			;c->l
+		bra	z80emu1
+
+;	$6a ld l,d
+
+z80opc6a:	move.w	d2,(a2)
+		move.b	(a2),d1                 ;d->l
+		bra	z80emu1
+
+;	$6b ld l,e
+
+z80opc6b:	move.b	d2,d1			;e->l
+		bra	z80emu1
+
+;	$6c ld l,h
+
+z80opc6c:	move.w	d1,(a2)
+		move.b	(a2),d1                 ;h->l
+		bra	z80emu1
+
+;	$6d ld l,l is nop
+
+;	$6e ld l,(hl)
+
+z80opc6e:	move.b	0(a4,d1.w),d1           ;l
+		bra	z80emu1
+
+;	$6f ld l,a
+
+z80opc6f:	move.b	d0,d1			;a->l
+		bra	z80emu1
+
+;	$70 ld (hl),b
+
+z80opc70:	move.w	d3,d6
+		rol.w	#8,d6
+		move.b	d6,0(a4,d1.w)           ;b
+		bra	z80emu1
+
+;	$71 ld (hl),c
+
+z80opc71:	move.b	d3,0(a4,d1.w)           ;c
+		bra	z80emu1
+
+;	$72 ld (hl),d
+
+z80opc72:	move.w	d2,d6
+		rol.w	#8,d6
+		move.b	d6,0(a4,d1.w)           ;d
+		bra	z80emu1
+
+;	$73 ld (hl),e
+
+z80opc73:	move.b	d2,0(a4,d1.w)           ;e
+		bra	z80emu1
+
+;	$74 ld (hl),h
+
+z80opc74:	move.w	d1,d6
+		rol.w	#8,d6
+		move.b	d6,0(a4,d1.w)           ;h
+		bra	z80emu1
+
+;	$75 ld (hl),l
+
+z80opc75:	move.b	d1,0(a4,d1.w)           ;l
+		bra	z80emu1
+
+;	$76 halt is exit
+
+;	$77 ld (hl),a
+
+z80opc77:	move.b	d0,0(a4,d1.w)           ;a
+		bra	z80emu1
+
+;	$78 ld a,b
+
+z80opc78:	move.w	d3,(a2)
+		move.b	(a2),d0                 ;b->a
+		bra	z80emu1
+
+;	$79 ld a,c
+
+z80opc79:	move.b	d3,d0			;c->a
+		bra	z80emu1
+
+;	$7a ld a,d
+
+z80opc7a:	move.w	d2,(a2)
+		move.b	(a2),d0                 ;d->a
+		bra	z80emu1
+
+;	$7b ld a,e
+
+z80opc7b:	move.b	d2,d0			;e->a
+		bra	z80emu1
+
+;	$7c ld a,h
+
+z80opc7c:	move.w	d1,(a2)
+		move.b	(a2),d0                 ;h->a
+		bra	z80emu1
+
+;	$7d ld a,l
+
+z80opc7d:	move.b	d1,d0			;l->a
+		bra	z80emu1
+
+;	$7e ld a,(hl)
+
+z80opc7e:	move.b	0(a4,d1.w),d0           ;a
+		bra	z80emu1
+
+;	$7f ld a,a is nop
+
+;	$80 add a,b
+
+z80opc80:	move.w	d3,(a2)
+		add.b	(a2),d0                 ;a+b->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$81 add a,c
+
+z80opc81:	add.b	d3,d0			;a+c->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$82 add a,d
+
+z80opc82:	move.w	d2,(a2)
+		add.b	(a2),d0                 ;a+d->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$83 add a,e
+
+z80opc83:	add.b	d2,d0			;a+e->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$84 add a,h
+
+z80opc84:	move.w	d1,(a2)
+		add.b	(a2),d0                 ;a+h->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$85 add a,l
+
+z80opc85:	add.b	d1,d0			;a+l->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$86 add a,(hl)
+
+z80opc86:	add.b	0(a4,d1.w),d0           ;a+(hl)->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$87 add a,a
+
+z80opc87:	add.b	d0,d0			;a+a->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$88 adc a,b
+
+z80opc88:	and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc881		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc881:	move.w	d3,d6
+		rol.w	#8,d6			;b to lo
+		addx.b	d6,d0			;a+b->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$89 adc a,c
+
+z80opc89:	and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc891		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc891:	addx.b	d3,d0			;a+c->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$8a adc a,d
+
+z80opc8a:	move.w	d2,d6
+		rol.w	#8,d6			;d to lo
+		and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc8a1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc8a1:	addx.b	d6,d0			;a+d->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$8b adc a,e
+
+z80opc8b:	and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc8b1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc8b1:	addx.b	d2,d0			;a+e->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$8c adc a,h
+
+z80opc8c:	move.w	d1,d6
+		rol.w	#8,d6			;h to lo
+		and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc8c1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc8c1:	addx.b	d6,d0			;a+h->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$8d adc a,l
+
+z80opc8d:	and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc8d1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc8d1:	addx.b	d1,d0			;a+l->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$8e adc a,(hl)
+
+z80opc8e:	and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc8e1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc8e1:	move.b	0(a4,d1.w),d6           ;(hl)
+		addx.b	d6,d0			;a+(hl)->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$8f adc a,a
+
+z80opc8f:	and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc8f1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc8f1:	addx.b	d0,d0			;a+a->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$90 sub b
+
+z80opc90:	move.w	d3,(a2)
+		sub.b	(a2),d0                 ;a-b->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$91 sub c
+
+z80opc91:	sub.b	d3,d0			;a-c->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$92 sub d
+
+z80opc92:	move.w	d2,(a2)
+		sub.b	(a2),d0                 ;a-d->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$93 sub e
+
+z80opc93:	sub.b	d2,d0			;a-e->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$94 sub h
+
+z80opc94:	move.w	d1,(a2)
+		sub.b	(a2),d0                 ;a-h->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$95 sub l
+
+z80opc95:	sub.b	d1,d0			;a-l->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$96 sub (hl)
+
+z80opc96:	sub.b	0(a4,d1.w),d0           ;a-(hl)->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$97 sub a
+
+z80opc97:	sub.b	d0,d0			;a-a->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$98 sbc a,b
+
+z80opc98:	move.w	d3,d6
+		rol.w	#8,d6			;b to lo
+		and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc981		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc981:	subx.b	d6,d0			;a-b->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$99 sbc a,c
+
+z80opc99:	and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc991		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc991:	subx.b	d3,d0			;a-c->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$9a sbc a,d
+
+z80opc9a:	move.w	d2,d6
+		rol.w	#8,d6			;d to lo
+		and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc9a1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc9a1:	subx.b	d6,d0			;a-d->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$9b sbc a,e
+
+z80opc9b:	and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc9b1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc9b1:	subx.b	d2,d0			;a-e->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$9c sbc a,h
+
+z80opc9c:	move.w	d1,d6
+		rol.w	#8,d6			;h to lo
+		and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc9c1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc9c1:	subx.b	d6,d0			;a-h->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$9d sbc a,l
+
+z80opc9d:	and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc9d1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc9d1:	subx.b	d1,d0			;a-l->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$9e sbc a,(hl)
+
+z80opc9e:	and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc9e1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc9e1:	move.b	0(a4,d1.w),d6           ;(hl)
+		subx.b	d6,d0			;a-(hl)->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$9f sbc a,a
+
+z80opc9f:	and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc9f1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc9f1:	subx.b	d0,d0			;a-a->a
+		bsr	setflg
+		bra	z80emu1
+
+;	$a0 and b
+
+z80opca0:	move.w	d3,(a2)
+		and.b	(a2),d0                 ;a and b->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$a1 and c
+
+z80opca1:	and.b	d3,d0			;a and c->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$a2 and d
+
+z80opca2:	move.w	d2,(a2)
+		and.b	(a2),d0                 ;a and d->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$a3 and e
+
+z80opca3:	and.b	d2,d0			;a and e->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$a4 and h
+
+z80opca4:	move.w	d1,(a2)
+		and.b	(a2),d0                 ;a and h->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$a5 and l
+
+z80opca5:	and.b	d1,d0			;a and l->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$a6 and (hl)
+
+z80opca6:	and.b	0(a4,d1.w),d0           ;a and (hl)->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$a7 and a
+
+z80opca7:	and.b	d0,d0			;a and a->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$a8 xor b
+
+z80opca8:	move.w	d3,(a2)
+		move.b	(a2),d6
+		eor.b	d6,d0			;a xor b->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$a9 xor c
+
+z80opca9:	eor.b	d3,d0			;a xor c->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$aa xor d
+
+z80opcaa:	move.w	d2,(a2)
+		move.b	(a2),d6
+		eor.b	d6,d0			;a xor d->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$ab xor e
+
+z80opcab:	eor.b	d2,d0			;a xor e->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$ac xor h
+
+z80opcac:	move.w	d1,(a2)
+		move.b	(a2),d6
+		eor.b	d6,d0			;a xor h->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$ad xor l
+
+z80opcad:	eor.b	d1,d0			;a xor l->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$ae xor (hl)
+
+z80opcae:	move.b	0(a4,d1.w),d6           ;(hl)
+		eor.b	d6,d0			;a xor (hl)->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$af xor a
+
+z80opcaf:	eor.b	d0,d0			;a xor a->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$b0 or b
+
+z80opcb0:	move.w	d3,(a2)
+		or.b	(a2),d0                 ;a or b->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$b1 or c
+
+z80opcb1:	or.b	d3,d0			;a or c->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$b2 or d
+
+z80opcb2:	move.w	d2,(a2)
+		or.b	(a2),d0                 ;a or d->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$b3 or e
+
+z80opcb3:	or.b	d2,d0			;a or e->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$b4 or h
+
+z80opcb4:	move.w	d1,(a2)
+		or.b	(a2),d0                 ;a or h->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$b5 or l
+
+z80opcb5:	or.b	d1,d0			;a or l->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$b6 or (hl)
+
+z80opcb6:	or.b	0(a4,d1.w),d0           ;a or (hl)->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$b7 or a
+
+z80opcb7:	or.b	d0,d0			;a or a->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$b8 cp b
+
+z80opcb8:	move.w	d3,(a2)
+		cmp.b	(a2),d0                 ;a-b
+		bsr	setflg
+		bra	z80emu1
+
+;	$b9 cp c
+
+z80opcb9:	cmp.b	d3,d0			;a-c
+		bsr	setflg
+		bra	z80emu1
+
+;	$ba cp d
+
+z80opcba:	move.w	d2,(a2)
+		cmp.b	(a2),d0                 ;a-d
+		bsr	setflg
+		bra	z80emu1
+
+;	$bb cp e
+
+z80opcbb:	cmp.b	d2,d0			;a-e
+		bsr	setflg
+		bra	z80emu1
+
+;	$bc cp h
+
+z80opcbc:	move.w	d1,(a2)
+		cmp.b	(a2),d0                 ;a-h
+		bsr	setflg
+		bra	z80emu1
+
+;	$bd cp l
+
+z80opcbd:	cmp.b	d1,d0			;a-l
+		bsr	setflg
+		bra	z80emu1
+
+;	$be cp (hl)
+
+z80opcbe:	cmp.b	0(a4,d1.w),d0           ;a-(hl)
+		bsr	setflg
+		bra	z80emu1
+
+;	$bf cp a
+
+z80opcbf:	cmp.b	d0,d0			;a-a
+		bsr	setflg
+		bra	z80emu1
+
+;	$c0 ret nz
+
+z80opcc0:	btst.l	#14,d0
+		bne	z80emu1 		;if z=1
+		ret
+		bra	z80emu1
+
+;	$c1 pop bc
+
+z80opcc1:	pop	d3
+		bra	z80emu1
+
+;	$c2 jp nz,nn
+
+z80opcc2:	ldrrimm d6
+		btst.l	#14,d0
+		bne	z80emu1 		;if z=1
+		move.w	d6,a0			;jump
+		bra	z80emu1
+
+;	$c3 jp nn
+
+z80opcc3:	ldrrimm d6
+		move.w	d6,a0			;jump
+		bra	z80emu1
+
+;	$c4 call nz,nn
+
+z80opcc4:	ldrrimm d6
+		btst.l	#14,d0
+		bne	z80emu1 		;if z=1
+		call
+		bra	z80emu1
+
+;	$c5 push bc
+
+z80opcc5:	push	d3
+		bra	z80emu1
+
+;	$c6 add a,n
+
+z80opcc6:	add.b	0(a4,a0.w),d0           ;a+n->a
+		addq.l	#1,a0
+		bsr	setflg
+		bra	z80emu1
+
+;	$c7 rst 0
+
+z80opcc7:	move.w	a0,d6			;pc
+		subq.l	#2,a1
+		move.b	d6,0(a4,a1.w)           ;pc lo
+		rol.w	#8,d6			;move hi to lo
+		addq.l	#1,a1
+		move.b	d6,0(a4,a1.w)           ;pc hi
+		subq.l	#1,a1			;set sp
+		move.l	#0,a0			;reset
+		bra	z80emu1
+
+;	$c8 ret z
+
+z80opcc8:	btst.l	#14,d0
+		beq	z80emu1 		;if z=0
+		ret
+		bra	z80emu1
+
+;	$c9 ret, return for cpm emulator
+
+z80opcc9:	ret
+		bra	z80emu1
+
+;	$ca jp z,nn
+
+z80opcca:	ldrrimm d6
+		btst.l	#14,d0
+		beq	z80emu1 		;if z=0
+		move.w	d6,a0			;jump
+		bra	z80emu1
+
+;	$cb 1:st byte in rotate, shift, and bit manipulation
+;	is found in module zekcb
+
+;	$cc call z,nn
+
+z80opccc:	ldrrimm d6
+		btst.l	#14,d0
+		beq	z80emu1 		;if z=0
+		call
+		bra	z80emu1
+
+;	$cd call nn
+
+z80opccd:	ldrrimm d6
+		call
+		bra	z80emu1
+
+;	$ce adc a,n
+
+z80opcce:	and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opcce1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opcce1:	move.b	0(a4,a0.w),d6           ;n
+		addx.b	d6,d0			;a+n->a
+		addq.l	#1,a0
+		bsr	setflg
+		bra	z80emu1
+
+;	$cf rst 8
+
+z80opccf:	move.w	a0,d6			;pc
+		subq.l	#2,a1
+		move.b	d6,0(a4,a1.w)           ;pc lo
+		rol.w	#8,d6			;move hi to lo
+		addq.l	#1,a1
+		move.b	d6,(a1)                 ;pc hi
+		subq.l	#1,a1			;set sp
+		move.l	#8,a0			;jump
+		bra	z80emu1
+
+;	$d0 ret nc
+
+z80opcd0:	btst.l	#8,d0
+		bne	z80emu1 		;if c=1
+		ret
+		bra	z80emu1
+
+;	$d1 pop de
+
+z80opcd1:	pop	d2
+		bra	z80emu1
+
+;	$d2 jp nc,nn
+
+z80opcd2:	ldrrimm d6
+		btst.l	#8,d0
+		bne	z80emu1 		;if c=1
+		move.w	d6,a0			;jump
+		bra	z80emu1
+
+;	$d3 out (n),a is nop
+
+z80opcd3:	addq.l	#1,a0			;skip n
+		bra	z80emu1
+
+;	$d4 call nc,nn
+
+z80opcd4:	ldrrimm d6
+		btst.l	#8,d0
+		bne	z80emu1 		;if c=1
+		call
+		bra	z80emu1
+
+;	$d5 push de
+
+z80opcd5:	push	d2
+		bra	z80emu1
+
+;	$d6 sub n
+
+z80opcd6:	sub.b	0(a4,a0.w),d0           ;a+n->a
+		addq.l	#1,a0
+		bsr	setflg
+		bra	z80emu1
+
+;	$d7 rst 16
+
+z80opcd7:	move.w	a0,d6			;pc
+		subq.l	#2,a1
+		move.b	d6,0(a4,a1.w)           ;pc lo
+		rol.w	#8,d6			;move hi to lo
+		addq.l	#1,a1
+		move.b	d6,0(a4,a1.w)           ;pc hi
+		subq.l	#1,a1			;set sp
+		move.l	#16,a0			;jump
+		bra	z80emu1
+
+;	$d8 ret c
+
+z80opcd8:	btst.l	#8,d0
+		beq	z80emu1 		;if c=0
+		ret
+		bra	z80emu1
+
+;	$d9 exx
+
+z80opcd9:	swap	d1			;hl
+		swap	d2			;de
+		swap	d3			;bc
+		bra	z80emu1
+
+;	$da jp c,nn
+
+z80opcda:	ldrrimm d6
+		btst.l	#8,d0
+		beq	z80emu1 		;if c=0
+		move.w	d6,a0			;jump
+		bra	z80emu1
+
+;	$db in a,(n)
+
+z80opcdb:	clr.b	d0			;0->a
+		addq.l	#1,a0			;skip n
+		bra	z80emu1
+
+;	$dc call c,nn
+
+z80opcdc:	ldrrimm d6
+		btst.l	#8,d0
+		beq	z80emu1 		;if c=0
+		call
+		bra	z80emu1
+
+;	$dd 1:st byte in ix
+;	is found in module zekdd
+
+;	$de sbc a,n
+
+z80opcde:	and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opcde1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opcde1:	move.b	0(a4,a0.w),d6           ;n
+		subx.b	d6,d0			;a+n->a
+		addq.l	#1,a0
+		bsr	setflg
+		bra	z80emu1
+
+;	$df rst 24
+
+z80opcdf:	move.w	a0,d6			;pc
+		subq.l	#2,a1
+		move.b	d6,0(a4,a1.w)           ;pc lo
+		rol.w	#8,d6			;move hi to lo
+		addq.l	#1,a1
+		move.b	d6,0(a4,a1.w)           ;pc hi
+		subq.l	#1,a1			;set sp
+		move.l	#24,a0			;jump
+		bra	z80emu1
+
+;	$e0 ret po
+
+z80opce0:	btst.l	#10,d0			;po = v=0
+		bne	z80emu1 		;if v=1
+		ret
+		bra	z80emu1
+
+;	$e1 pop hl
+
+z80opce1:	pop	d1
+		bra	z80emu1
+
+;	$e2 jp po,nn
+
+z80opce2:	ldrrimm d6
+		btst.l	#10,d0			;po = v=0
+		bne	z80emu1 		;if v=1
+		move.w	d6,a0			;jump
+		bra	z80emu1
+
+;	$e3 ex (sp),hl
+
+z80opce3:	move.b	1(a4,a1.w),d6           ;hi from stack
+		rol.w	#8,d6			;move to hi
+		move.b	0(a4,a1.w),d6           ;lo from stack
+		move.w	d6,a5
+		move.w	d1,d6			;hl
+		move.b	d6,0(a4,a1.w)           ;l to stack
+		rol.w	#8,d6			;move hi to lo
+		move.b	d6,1(a4,a1.w)           ;h to stack
+		move.w	a5,d1			;to hl
+		bra	z80emu1
+
+;	$e4 call po,nn
+
+z80opce4:	ldrrimm d6
+		btst.l	#10,d0			;po = v=0
+		bne	z80emu1 		;if v=1
+		call
+		bra	z80emu1
+
+;	$e5 push hl
+
+z80opce5:	push	d1
+		bra	z80emu1
+
+;	$e6 and n
+
+z80opce6:	and.b	0(a4,a0.w),d0           ;a and n->a
+		addq.l	#1,a0
+		bsr	setflgl
+		bra	z80emu1
+
+;	$e7 rst 32
+
+z80opce7:	move.w	a0,d6			;pc
+		subq.l	#2,a1
+		move.b	d6,0(a4,a1.w)           ;pc lo
+		rol.w	#8,d6			;move hi to lo
+		addq.l	#1,a1
+		move.b	d6,0(a4,a1.w)           ;pc hi
+		subq.l	#1,a1			;set sp
+		move.l	#32,a0			;jump
+		bra	z80emu1
+
+;	$e8 ret pe
+
+z80opce8:	btst.l	#10,d0			;pe = v=1
+		beq	z80emu1 		;if v=0
+		ret
+		bra	z80emu1
+
+;	$e9 jp (hl)
+
+z80opce9:	move.w	d1,a0
+		bra	z80emu1
+
+;	$ea jp pe,nn
+
+z80opcea:	ldrrimm d6
+		btst.l	#10,d0			;pe = v=1
+		beq	z80emu1 		;if v=0
+		move.w	d6,a0			;jump
+		bra	z80emu1
+
+;	$eb ex de,hl
+
+
+z80opceb:	move.w	d2,d6			;de
+		move.w	d1,d2			;hl to de
+		move.w	d6,d1			;de to hl
+		bra	z80emu1
+
+;	$ec call pe,nn
+
+z80opcec:	ldrrimm d6
+		btst.l	#10,d0			;po = v=0
+		beq	z80emu1 		;if v=0
+		call
+		bra	z80emu1
+
+;	$ed 1:st byte in 2 byte opcode
+;	is found in module zeked
+
+;	$ee xor n
+
+z80opcee:	move.b	0(a4,a0.w),d6           ;n
+		addq.l	#1,a0
+		eor.b	d6,d0			;a xor n->a
+		bsr	setflgl
+		bra	z80emu1
+
+;	$ef rst 40
+
+z80opcef:	move.w	a0,d6			;pc
+		subq.l	#2,a1
+		move.b	d6,0(a4,a1.w)           ;pc lo
+		rol.w	#8,d6			;move hi to lo
+		addq.l	#1,a1
+		move.b	d6,0(a4,a1.w)           ;pc hi
+		subq.l	#1,a1			;set sp
+		move.l	#40,a0			;jump
+		bra	z80emu1
+
+;	$f0 ret p
+
+z80opcf0:	btst.l	#15,d0
+		bne	z80emu1 		;if s=1
+		ret
+		bra	z80emu1
+
+;	$f1 pop af
+
+
+z80opcf1:	move.b	0(a4,a1.w),d0           ;f
+		rol.w	#8,d0			;move to hi
+		move.b	1(a4,a1.w),d0           ;a
+		addq.l	#2,a1			;set sp
+		bra	z80emu1
+
+;	$f2 jp p,nn
+
+z80opcf2:	ldrrimm d6
+		btst.l	#15,d0
+		bne	z80emu1 		;if s=1
+		move.w	d6,a0			;jump
+		bra	z80emu1
+
+;	$f3 di is nop
+
+;	$f4 call p,nn
+
+z80opcf4:	ldrrimm d6
+		btst.l	#15,d0
+		bne	z80emu1 		;if s=1
+		call
+		bra	z80emu1
+
+;	$f5 push af
+
+z80opcf5:	move.w	d0,d6
+		subq.l	#1,a1
+		move.b	d6,0(a4,a1.w)           ;a
+		rol.w	#8,d6			;move hi to lo
+		subq.l	#1,a1
+		move.b	d6,0(a4,a1.w)           ;f
+		bra	z80emu1
+
+;	$f6 or n
+
+z80opcf6:	or.b	0(a4,a0.w),d0           ;a or n->a
+		addq.l	#1,a0
+		bsr	setflgl
+		bra	z80emu1
+
+;	$f7 rst 48
+
+z80opcf7:	move.w	a0,d6			;pc
+		subq.l	#2,a1
+		move.b	d6,0(a4,a1.w)           ;pc lo
+		rol.w	#8,d6			;move hi to lo
+		addq.l	#1,a1
+		move.b	d6,0(a4,a1.w)           ;pc hi
+		subq.l	#1,a1			;set sp
+		move.l	#48,a0			;jump
+		bra	z80emu1
+
+;	$f8 ret m
+
+z80opcf8:	btst.l	#15,d0
+		beq	z80emu1 		;if s=0
+		ret
+		bra	z80emu1
+
+;	$f9 ld sp,hl
+
+z80opcf9:	move.w	d1,a1
+		bra	z80emu1
+
+;	$fa jp m,nn
+
+z80opcfa:	ldrrimm d6
+		btst.l	#15,d0
+		beq	z80emu1 		;if s=0
+		move.w	d6,a0			;jump
+		bra	z80emu1
+
+;	$fb ei is nop
+
+;	$fc call m,nn
+
+z80opcfc:	ldrrimm d6
+		btst.l	#15,d0
+		beq	z80emu1 		;if s=0
+		call
+		bra	z80emu1
+
+;	$fd 1:st byte in iy
+;	is found in module zekdd
+
+;	$fe cp n
+
+z80opcfe:	cmp.b	0(a4,a0.w),d0           ;a-n
+		addq.l	#1,a0
+		bsr	setflg
+		bra	z80emu1
+
+;	$ff rst 56
+
+z80opcff:	move.w	a0,d6			;pc
+		subq.l	#2,a1
+		move.b	d6,0(a4,a1.w)           ;pc lo
+		rol.w	#8,d6			;move hi to lo
+		addq.l	#1,a1
+		move.b	d6,0(a4,a1.w)           ;pc hi
+		subq.l	#1,a1			;set sp
+		move.l	#56,a0			;jump
+		bra	z80emu1
+
+;	setflg
+;	set flags in d0 bit 15-8 15 14 13 12 11 10  9  8  always n=h=0
+;				  s  z	-  h  -  v  n  c
+;	from flags in sr bit 7-0  7  6	5  4  3  2  1  0
+;				  -  -	-  x  n  z  v  c
+;	chg : d6,a5
+
+setflg: 	move.w	 sr,d6			;6
+		and.w	 #$000f,d6		;8 clr unwanted
+		lsl.b	 #1,d6			;8 tab is words
+		move.l	 #flgtab,a5		;12 ptr translation tab
+		move.w	 0(a5,d6),d6            ;14 translated flags
+		and.w	 #%0010100011111111,d0	;8 clr flags
+		or.w	 d6,d0			;4 merge  =60
+		rts
+
+;	setflgnc
+;	does not effect c flg
+;	set flags in d0 bit 15-8 15 14 13 12 11 10  9  8  always n=h=0
+;				  s  z	-  h  -  v  n  c
+;	from flags in sr bit 7-0  7  6	5  4  3  2  1  0
+;				  -  -	-  x  n  z  v  c
+;	chg : d6,a5
+
+setflgnc:	move.w	 sr,d6			;6
+		and.w	 #%0000000000001110,d6	;8 clr unwanted
+		move.l	 #flgtabnc,a5		;12 ptr translation tab
+		move.w	 0(a5,d6),d6            ;14 translated flags
+		and.w	 #%0010100111111111,d0	;8 clr flags
+		or.w	 d6,d0			;4 merge  =60
+		rts
+
+;	setflgl
+;	same as setflg but for logical instructions
+;	use v flag as parity flag, 1=even 0=odd
+;	v flag operate operate on d0.b (a reg)
+;	set v flag in d0 bit 15-8 15 14 13 12 11 10  9	8
+;				   s  z  -  h  -  v  n	c
+;	chg : d6,a5
+
+setflgl:	bsr	setflg			;normal flgs
+		moveq.l #0,d6
+		move.b	d0,d6			;a reg
+		move.l	#partab,a5		;ptr parity tab
+		move.b	0(a5,d6.w),d6           ;parity bit
+		and.w	#%1111101111111111,d0	;clr v flg
+		asl.w	#8,d6			;move to hi
+		or.w	d6,d0			;merge
+		rts
+
+;	data area
+;	initialized data area
+;	flgtab
+;	translation table for 68000 flags to z80 flags
+;			  sz-h-vnc< areg >     nzvc
+
+flgtab: 	dc.w	 %0000000000000000	;0000
+		dc.w	 %0000000100000000	;0001
+		dc.w	 %0000010000000000	;0010
+		dc.w	 %0000010100000000	;0011
+		dc.w	 %0100000000000000	;0100
+		dc.w	 %0100000100000000	;0101
+		dc.w	 %0100010000000000	;0110
+		dc.w	 %0100010100000000	;0111
+		dc.w	 %1000000000000000	;1000
+		dc.w	 %1000000100000000	;1001
+		dc.w	 %1000010000000000	;1010
+		dc.w	 %1000010100000000	;1011
+		dc.w	 %1100000000000000	;1100
+		dc.w	 %1100000100000000	;1101
+		dc.w	 %1100010000000000	;1110
+		dc.w	 %1100010100000000	;1111
+
+;	flgtabnc
+;	translation table for 68000 flags to z80 flags, no carry
+;			  sz-h-vnc< areg >     nzvc
+
+flgtabnc:	dc.w	 %0000000000000000	;0000
+		dc.w	 %0000010000000000	;0010
+		dc.w	 %0100000000000000	;0100
+		dc.w	 %0100010000000000	;0110
+		dc.w	 %1000000000000000	;1000
+		dc.w	 %1000010000000000	;1010
+		dc.w	 %1100000000000000	;1100
+		dc.w	 %1100010000000000	;1110
+
+;	partab
+;	look up table for v flag values, even=00000100b=4, odd=0
+
+partab: 	dc.b	4	;00000000  00
+		dc.b	0	;00000001  01
+		dc.b	0	;00000010  02
+		dc.b	4	;00000011  03
+		dc.b	0	;00000100  04
+		dc.b	4	;00000101  05
+		dc.b	4	;00000110  06
+		dc.b	0	;00000111  07
+		dc.b	0	;00001000  08
+		dc.b	4	;00001001  09
+		dc.b	4	;00001010  0a
+		dc.b	0	;00001011  0b
+		dc.b	4	;00001100  0c
+		dc.b	0	;00001101  0d
+		dc.b	0	;00001110  0e
+		dc.b	4	;00001111  0f
+
+		dc.b	0	;00000000  00 0001 plus 1 bit : invert 0000
+		dc.b	4	;00000001  01 10
+		dc.b	4	;00000010  02
+		dc.b	0	;00000011  03
+		dc.b	4	;00000100  04
+		dc.b	0	;00000101  05
+		dc.b	0	;00000110  06
+		dc.b	4	;00000111  07
+		dc.b	4	;00001000  08
+		dc.b	0	;00001001  09
+		dc.b	0	;00001010  0a
+		dc.b	4	;00001011  0b
+		dc.b	0	;00001100  0c
+		dc.b	4	;00001101  0d
+		dc.b	4	;00001110  0e
+		dc.b	0	;00001111  0f
+
+		dc.b	0	;00000000  00 0010 plus 1 bit : invert 0000
+		dc.b	4	;00000001  01 20
+		dc.b	4	;00000010  02
+		dc.b	0	;00000011  03
+		dc.b	4	;00000100  04
+		dc.b	0	;00000101  05
+		dc.b	0	;00000110  06
+		dc.b	4	;00000111  07
+		dc.b	4	;00001000  08
+		dc.b	0	;00001001  09
+		dc.b	0	;00001010  0a
+		dc.b	4	;00001011  0b
+		dc.b	0	;00001100  0c
+		dc.b	4	;00001101  0d
+		dc.b	4	;00001110  0e
+		dc.b	0	;00001111  0f
+
+		dc.b	4	;00000000  00 0011 plus 2 bit : same as 0000
+		dc.b	0	;00000001  01 30
+		dc.b	0	;00000010  02
+		dc.b	4	;00000011  03
+		dc.b	0	;00000100  04
+		dc.b	4	;00000101  05
+		dc.b	4	;00000110  06
+		dc.b	0	;00000111  07
+		dc.b	0	;00001000  08
+		dc.b	4	;00001001  09
+		dc.b	4	;00001010  0a
+		dc.b	0	;00001011  0b
+		dc.b	4	;00001100  0c
+		dc.b	0	;00001101  0d
+		dc.b	0	;00001110  0e
+		dc.b	4	;00001111  0f
+
+		dc.b	0	;00000000  00 0100 plus 1 bit : invert 0000
+		dc.b	4	;00000001  01 40
+		dc.b	4	;00000010  02
+		dc.b	0	;00000011  03
+		dc.b	4	;00000100  04
+		dc.b	0	;00000101  05
+		dc.b	0	;00000110  06
+		dc.b	4	;00000111  07
+		dc.b	4	;00001000  08
+		dc.b	0	;00001001  09
+		dc.b	0	;00001010  0a
+		dc.b	4	;00001011  0b
+		dc.b	0	;00001100  0c
+		dc.b	4	;00001101  0d
+		dc.b	4	;00001110  0e
+		dc.b	0	;00001111  0f
+
+		dc.b	4	;00000000  00 0101 plus 2 bit : same as 0000
+		dc.b	0	;00000001  01 50
+		dc.b	0	;00000010  02
+		dc.b	4	;00000011  03
+		dc.b	0	;00000100  04
+		dc.b	4	;00000101  05
+		dc.b	4	;00000110  06
+		dc.b	0	;00000111  07
+		dc.b	0	;00001000  08
+		dc.b	4	;00001001  09
+		dc.b	4	;00001010  0a
+		dc.b	0	;00001011  0b
+		dc.b	4	;00001100  0c
+		dc.b	0	;00001101  0d
+		dc.b	0	;00001110  0e
+		dc.b	4	;00001111  0f
+
+		dc.b	4	;00000000  00 0110 plus 2 bit : same as 0000
+		dc.b	0	;00000001  01 60
+		dc.b	0	;00000010  02
+		dc.b	4	;00000011  03
+		dc.b	0	;00000100  04
+		dc.b	4	;00000101  05
+		dc.b	4	;00000110  06
+		dc.b	0	;00000111  07
+		dc.b	0	;00001000  08
+		dc.b	4	;00001001  09
+		dc.b	4	;00001010  0a
+		dc.b	0	;00001011  0b
+		dc.b	4	;00001100  0c
+		dc.b	0	;00001101  0d
+		dc.b	0	;00001110  0e
+		dc.b	4	;00001111  0f
+
+		dc.b	0	;00000000  00 0111 plus 3 bit : invert 0000
+		dc.b	4	;00000001  01 70
+		dc.b	4	;00000010  02
+		dc.b	0	;00000011  03
+		dc.b	4	;00000100  04
+		dc.b	0	;00000101  05
+		dc.b	0	;00000110  06
+		dc.b	4	;00000111  07
+		dc.b	4	;00001000  08
+		dc.b	0	;00001001  09
+		dc.b	0	;00001010  0a
+		dc.b	4	;00001011  0b
+		dc.b	0	;00001100  0c
+		dc.b	4	;00001101  0d
+		dc.b	4	;00001110  0e
+		dc.b	0	;00001111  0f
+
+		dc.b	0	;00000000  00 1000 plus 1 bit : invert 0000
+		dc.b	4	;00000001  01 80
+		dc.b	4	;00000010  02
+		dc.b	0	;00000011  03
+		dc.b	4	;00000100  04
+		dc.b	0	;00000101  05
+		dc.b	0	;00000110  06
+		dc.b	4	;00000111  07
+		dc.b	4	;00001000  08
+		dc.b	0	;00001001  09
+		dc.b	0	;00001010  0a
+		dc.b	4	;00001011  0b
+		dc.b	0	;00001100  0c
+		dc.b	4	;00001101  0d
+		dc.b	4	;00001110  0e
+		dc.b	0	;00001111  0f
+
+		dc.b	4	;00000000  00 1001 plus 2 bit : same as 0000
+		dc.b	0	;00000001  01 90
+		dc.b	0	;00000010  02
+		dc.b	4	;00000011  03
+		dc.b	0	;00000100  04
+		dc.b	4	;00000101  05
+		dc.b	4	;00000110  06
+		dc.b	0	;00000111  07
+		dc.b	0	;00001000  08
+		dc.b	4	;00001001  09
+		dc.b	4	;00001010  0a
+		dc.b	0	;00001011  0b
+		dc.b	4	;00001100  0c
+		dc.b	0	;00001101  0d
+		dc.b	0	;00001110  0e
+		dc.b	4	;00001111  0f
+
+		dc.b	4	;00000000  00 1010 plus 2 bit : same as 0000
+		dc.b	0	;00000001  01 a0
+		dc.b	0	;00000010  02
+		dc.b	4	;00000011  03
+		dc.b	0	;00000100  04
+		dc.b	4	;00000101  05
+		dc.b	4	;00000110  06
+		dc.b	0	;00000111  07
+		dc.b	0	;00001000  08
+		dc.b	4	;00001001  09
+		dc.b	4	;00001010  0a
+		dc.b	0	;00001011  0b
+		dc.b	4	;00001100  0c
+		dc.b	0	;00001101  0d
+		dc.b	0	;00001110  0e
+		dc.b	4	;00001111  0f
+
+		dc.b	0	;00000000  00 1011 plus 3 bit : invert 0000
+		dc.b	4	;00000001  01 b0
+		dc.b	4	;00000010  02
+		dc.b	0	;00000011  03
+		dc.b	4	;00000100  04
+		dc.b	0	;00000101  05
+		dc.b	0	;00000110  06
+		dc.b	4	;00000111  07
+		dc.b	4	;00001000  08
+		dc.b	0	;00001001  09
+		dc.b	0	;00001010  0a
+		dc.b	4	;00001011  0b
+		dc.b	0	;00001100  0c
+		dc.b	4	;00001101  0d
+		dc.b	4	;00001110  0e
+		dc.b	0	;00001111  0f
+
+		dc.b	4	;00000000  00 1100 plus 2 bit : same as 0000
+		dc.b	0	;00000001  01 c0
+		dc.b	0	;00000010  02
+		dc.b	4	;00000011  03
+		dc.b	0	;00000100  04
+		dc.b	4	;00000101  05
+		dc.b	4	;00000110  06
+		dc.b	0	;00000111  07
+		dc.b	0	;00001000  08
+		dc.b	4	;00001001  09
+		dc.b	4	;00001010  0a
+		dc.b	0	;00001011  0b
+		dc.b	4	;00001100  0c
+		dc.b	0	;00001101  0d
+		dc.b	0	;00001110  0e
+		dc.b	4	;00001111  0f
+
+		dc.b	0	;00000000  00 1101 plus 3 bit : invert 0000
+		dc.b	4	;00000001  01 d0
+		dc.b	4	;00000010  02
+		dc.b	0	;00000011  03
+		dc.b	4	;00000100  04
+		dc.b	0	;00000101  05
+		dc.b	0	;00000110  06
+		dc.b	4	;00000111  07
+		dc.b	4	;00001000  08
+		dc.b	0	;00001001  09
+		dc.b	0	;00001010  0a
+		dc.b	4	;00001011  0b
+		dc.b	0	;00001100  0c
+		dc.b	4	;00001101  0d
+		dc.b	4	;00001110  0e
+		dc.b	0	;00001111  0f
+
+		dc.b	0	;00000000  00 1110 plus 3 bit : invert 0000
+		dc.b	4	;00000001  01 e0
+		dc.b	4	;00000010  02
+		dc.b	0	;00000011  03
+		dc.b	4	;00000100  04
+		dc.b	0	;00000101  05
+		dc.b	0	;00000110  06
+		dc.b	4	;00000111  07
+		dc.b	4	;00001000  08
+		dc.b	0	;00001001  09
+		dc.b	0	;00001010  0a
+		dc.b	4	;00001011  0b
+		dc.b	0	;00001100  0c
+		dc.b	4	;00001101  0d
+		dc.b	4	;00001110  0e
+		dc.b	0	;00001111  0f
+
+		dc.b	4	;00000000  00 1111 plus 4 bit : same as 0000
+		dc.b	0	;00000001  01 f0
+		dc.b	0	;00000010  02
+		dc.b	4	;00000011  03
+		dc.b	0	;00000100  04
+		dc.b	4	;00000101  05
+		dc.b	4	;00000110  06
+		dc.b	0	;00000111  07
+		dc.b	0	;00001000  08
+		dc.b	4	;00001001  09
+		dc.b	4	;00001010  0a
+		dc.b	0	;00001011  0b
+		dc.b	4	;00001100  0c
+		dc.b	0	;00001101  0d
+		dc.b	0	;00001110  0e
+		dc.b	4	;00001111  0f
+
+;	address table for z80 first opcode
+
+z80opctab:	dc.l  z80opc00
+		dc.l  z80opc01
+		dc.l  z80opc02
+		dc.l  z80opc03
+		dc.l  z80opc04
+		dc.l  z80opc05
+		dc.l  z80opc06
+		dc.l  z80opc07
+		dc.l  z80opc08
+		dc.l  z80opc09
+		dc.l  z80opc0a
+		dc.l  z80opc0b
+		dc.l  z80opc0c
+		dc.l  z80opc0d
+		dc.l  z80opc0e
+		dc.l  z80opc0f
+		dc.l  z80opc10
+		dc.l  z80opc11
+		dc.l  z80opc12
+		dc.l  z80opc13
+		dc.l  z80opc14
+		dc.l  z80opc15
+		dc.l  z80opc16
+		dc.l  z80opc17
+		dc.l  z80opc18
+		dc.l  z80opc19
+		dc.l  z80opc1a
+		dc.l  z80opc1b
+		dc.l  z80opc1c
+		dc.l  z80opc1d
+		dc.l  z80opc1e
+		dc.l  z80opc1f
+		dc.l  z80opc20
+		dc.l  z80opc21
+		dc.l  z80opc22
+		dc.l  z80opc23
+		dc.l  z80opc24
+		dc.l  z80opc25
+		dc.l  z80opc26
+		dc.l  z80opc27
+		dc.l  z80opc28
+		dc.l  z80opc29
+		dc.l  z80opc2a
+		dc.l  z80opc2b
+		dc.l  z80opc2c
+		dc.l  z80opc2d
+		dc.l  z80opc2e
+		dc.l  z80opc2f
+		dc.l  z80opc30
+		dc.l  z80opc31
+		dc.l  z80opc32
+		dc.l  z80opc33
+		dc.l  z80opc34
+		dc.l  z80opc35
+		dc.l  z80opc36
+		dc.l  z80opc37
+		dc.l  z80opc38
+		dc.l  z80opc39
+		dc.l  z80opc3a
+		dc.l  z80opc3b
+		dc.l  z80opc3c
+		dc.l  z80opc3d
+		dc.l  z80opc3e
+		dc.l  z80opc3f
+		dc.l  z80opc40
+		dc.l  z80opc41
+		dc.l  z80opc42
+		dc.l  z80opc43
+		dc.l  z80opc44
+		dc.l  z80opc45
+		dc.l  z80opc46
+		dc.l  z80opc47
+		dc.l  z80opc48
+		dc.l  z80opc49
+		dc.l  z80opc4a
+		dc.l  z80opc4b
+		dc.l  z80opc4c
+		dc.l  z80opc4d
+		dc.l  z80opc4e
+		dc.l  z80opc4f
+		dc.l  z80opc50
+		dc.l  z80opc51
+		dc.l  z80opc52
+		dc.l  z80opc53
+		dc.l  z80opc54
+		dc.l  z80opc55
+		dc.l  z80opc56
+		dc.l  z80opc57
+		dc.l  z80opc58
+		dc.l  z80opc59
+		dc.l  z80opc5a
+		dc.l  z80opc5b
+		dc.l  z80opc5c
+		dc.l  z80opc5d
+		dc.l  z80opc5e
+		dc.l  z80opc5f
+		dc.l  z80opc60
+		dc.l  z80opc61
+		dc.l  z80opc62
+		dc.l  z80opc63
+		dc.l  z80opc64
+		dc.l  z80opc65
+		dc.l  z80opc66
+		dc.l  z80opc67
+		dc.l  z80opc68
+		dc.l  z80opc69
+		dc.l  z80opc6a
+		dc.l  z80opc6b
+		dc.l  z80opc6c
+		dc.l  z80opc6d
+		dc.l  z80opc6e
+		dc.l  z80opc6f
+		dc.l  z80opc70
+		dc.l  z80opc71
+		dc.l  z80opc72
+		dc.l  z80opc73
+		dc.l  z80opc74
+		dc.l  z80opc75
+		dc.l  z80opc76
+		dc.l  z80opc77
+		dc.l  z80opc78
+		dc.l  z80opc79
+		dc.l  z80opc7a
+		dc.l  z80opc7b
+		dc.l  z80opc7c
+		dc.l  z80opc7d
+		dc.l  z80opc7e
+		dc.l  z80opc7f
+		dc.l  z80opc80
+		dc.l  z80opc81
+		dc.l  z80opc82
+		dc.l  z80opc83
+		dc.l  z80opc84
+		dc.l  z80opc85
+		dc.l  z80opc86
+		dc.l  z80opc87
+		dc.l  z80opc88
+		dc.l  z80opc89
+		dc.l  z80opc8a
+		dc.l  z80opc8b
+		dc.l  z80opc8c
+		dc.l  z80opc8d
+		dc.l  z80opc8e
+		dc.l  z80opc8f
+		dc.l  z80opc90
+		dc.l  z80opc91
+		dc.l  z80opc92
+		dc.l  z80opc93
+		dc.l  z80opc94
+		dc.l  z80opc95
+		dc.l  z80opc96
+		dc.l  z80opc97
+		dc.l  z80opc98
+		dc.l  z80opc99
+		dc.l  z80opc9a
+		dc.l  z80opc9b
+		dc.l  z80opc9c
+		dc.l  z80opc9d
+		dc.l  z80opc9e
+		dc.l  z80opc9f
+		dc.l  z80opca0
+		dc.l  z80opca1
+		dc.l  z80opca2
+		dc.l  z80opca3
+		dc.l  z80opca4
+		dc.l  z80opca5
+		dc.l  z80opca6
+		dc.l  z80opca7
+		dc.l  z80opca8
+		dc.l  z80opca9
+		dc.l  z80opcaa
+		dc.l  z80opcab
+		dc.l  z80opcac
+		dc.l  z80opcad
+		dc.l  z80opcae
+		dc.l  z80opcaf
+		dc.l  z80opcb0
+		dc.l  z80opcb1
+		dc.l  z80opcb2
+		dc.l  z80opcb3
+		dc.l  z80opcb4
+		dc.l  z80opcb5
+		dc.l  z80opcb6
+		dc.l  z80opcb7
+		dc.l  z80opcb8
+		dc.l  z80opcb9
+		dc.l  z80opcba
+		dc.l  z80opcbb
+		dc.l  z80opcbc
+		dc.l  z80opcbd
+		dc.l  z80opcbe
+		dc.l  z80opcbf
+		dc.l  z80opcc0
+		dc.l  z80opcc1
+		dc.l  z80opcc2
+		dc.l  z80opcc3
+		dc.l  z80opcc4
+		dc.l  z80opcc5
+		dc.l  z80opcc6
+		dc.l  z80opcc7
+		dc.l  z80opcc8
+		dc.l  z80opcc9
+		dc.l  z80opcca
+		dc.l  z80opccb
+		dc.l  z80opccc
+		dc.l  z80opccd
+		dc.l  z80opcce
+		dc.l  z80opccf
+		dc.l  z80opcd0
+		dc.l  z80opcd1
+		dc.l  z80opcd2
+		dc.l  z80opcd3
+		dc.l  z80opcd4
+		dc.l  z80opcd5
+		dc.l  z80opcd6
+		dc.l  z80opcd7
+		dc.l  z80opcd8
+		dc.l  z80opcd9
+		dc.l  z80opcda
+		dc.l  z80opcdb
+		dc.l  z80opcdc
+		dc.l  z80opcdd
+		dc.l  z80opcde
+		dc.l  z80opcdf
+		dc.l  z80opce0
+		dc.l  z80opce1
+		dc.l  z80opce2
+		dc.l  z80opce3
+		dc.l  z80opce4
+		dc.l  z80opce5
+		dc.l  z80opce6
+		dc.l  z80opce7
+		dc.l  z80opce8
+		dc.l  z80opce9
+		dc.l  z80opcea
+		dc.l  z80opceb
+		dc.l  z80opcec
+		dc.l  z80opced
+		dc.l  z80opcee
+		dc.l  z80opcef
+		dc.l  z80opcf0
+		dc.l  z80opcf1
+		dc.l  z80opcf2
+		dc.l  z80opcf3
+		dc.l  z80opcf4
+		dc.l  z80opcf5
+		dc.l  z80opcf6
+		dc.l  z80opcf7
+		dc.l  z80opcf8
+		dc.l  z80opcf9
+		dc.l  z80opcfa
+		dc.l  z80opcfb
+		dc.l  z80opcfc
+		dc.l  z80opcfd
+		dc.l  z80opcfe
+		dc.l  z80opcff
+
+;	debug count instruction
+
+cntinst:	addq.l	#1,a0
+
+;	prompts
+
+trcpmt:
+cntpmt: 	dc.b	'Enter name of file',0
+
+;	various
+
+cntbuf		dc.l	0		;ptr to debug counter area
+cntfile:	dc.b	'a:cpm.count',0 ;default string
+cntfend:
+		ds.b	cntfilesize-(cntfend-cntfile) ;fill out
+handle3:	dc.l	0		;handle to trace file
+trcbuf		dc.l	0		;ptr to trace buffer start
+trcfile:	dc.b	'a:cpm.trace',0 ;default string
+trcfend:
+		ds.b	trcfilesize-(trcfend-trcfile) ;fill out
+trcptr		dc.l	0		;current ptr into trace buffer
+
+;	uninitialized data area
+;	various
+
+scratch:	ds.l	1		;scratch use by z80 emulator
+trccnt: 	ds.l	1		;trace buffer byte count
+
+		end
+
+

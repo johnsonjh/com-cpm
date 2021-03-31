@@ -1,0 +1,3171 @@
+|***********************************************************************|
+|									|
+|	Z-80 opcode simulation routines 				|
+|									|
+|***********************************************************************|
+
+#ifdef Z80
+#  include "ppcmacros.h"	/* Get NEXT code & declarations. */
+
+	.globl badop,CBoptab,DDoptab,EDoptab,FDoptab,DDCBopt
+	.globl prDDCB,prFDCB,illgED,ilDDCB,mloop
+
+inp:	and regf,regf,regcon01
+	blr
+
+outp:	blr
+
+rlcb:	lbz r0,regb(regs)			| CB00 RLC B
+	RLCM(r0)
+	stb r0,regb(regs)
+	setapflags(r0)
+	next
+
+rlcc:	lbz r0,regc(regs)			| CB01 RLC C
+	RLCM(r0)
+	stb r0,regc(regs)
+	setapflags(r0)
+	next
+
+rlcd:	lbz r0,regd(regs)			| CB02 RLC D
+	RLCM(r0)
+	stb r0,regd(regs)
+	setapflags(r0)
+	next
+
+rlce:	lbz r0,rege(regs)			| CB03 RLC E
+	RLCM(r0)
+	stb r0,rege(regs)
+	setapflags(r0)
+	next
+
+rlch:	lbz r0,regh(regs)			| CB04 RLC H
+	RLCM(r0)
+	stb r0,regh(regs)
+	setapflags(r0)
+	next
+
+rlcl:	lbz r0,regl(regs)			| CB05 RLC L
+	RLCM(r0)
+	stb r0,regl(regs)
+	setapflags(r0)
+	next
+
+rlcm:	lhz r3,regh(regs)			| CB06 RLC M
+	lbzx r0,r3,targbase
+	RLCM(r0)
+	stbx r0,r3,targbase
+	setapflags(r0)
+	next
+
+rlca:	RLCM(rega)				| CB07 RLC A
+	setapflags(rega)
+	next
+
+rrcb:	lbz r0,regb(regs)			| CB08 RRC B
+	RRCM(r0)
+	stb r0,regb(regs)
+	setapflags(r0)
+	next
+
+rrcc:	lbz r0,regc(regs)			| CB09 RRC C
+	RRCM(r0)
+	stb r0,regc(regs)
+	setapflags(r0)
+	next
+
+rrcd:	lbz r0,regd(regs)			| CB0A RRC D
+	RRCM(r0)
+	stb r0,regd(regs)
+	setapflags(r0)
+	next
+
+rrce:	lbz r0,rege(regs)			| CB0B RRC E
+	RRCM(r0)
+	stb r0,rege(regs)
+	setapflags(r0)
+	next
+
+rrch:	lbz r0,regh(regs)			| CB0C RRC H
+	RRCM(r0)
+	stb r0,regh(regs)
+	setapflags(r0)
+	next
+
+rrcl:	lbz r0,regl(regs)			| CB0D RRC L
+	RRCM(r0)
+	stb r0,regl(regs)
+	setapflags(r0)
+	next
+
+rrcm:	lhz r3,regh(regs)			| CB0E RRC M
+	lbzx r0,r3,targbase
+	RRCM(r0)
+	stbx r0,r3,targbase
+	setapflags(r0)
+	next
+
+rrca:	RRCM(rega)				| CB0F RRC A
+	setapflags(rega)
+	next
+
+rlrb:	lbz r0,regb(regs)			| CB10 RL B
+	RALM(r0)
+	andi. r0,r0,0xFF
+	stb r0,regb(regs)
+	setapflags(r0)
+	next
+
+rlrc:	lbz r0,regc(regs)			| CB11 RL C
+	RALM(r0)
+	andi. r0,r0,0xFF
+	stb r0,regc(regs)
+	setapflags(r0)
+	next
+
+rlrd:	lbz r0,regd(regs)			| CB12 RL D
+	RALM(r0)
+	andi. r0,r0,0xFF
+	stb r0,regd(regs)
+	setapflags(r0)
+	next
+
+rlre:	lbz r0,rege(regs)			| CB13 RL E
+	RALM(r0)
+	andi. r0,r0,0xFF
+	stb r0,rege(regs)
+	setapflags(r0)
+	next
+
+rlrh:	lbz r0,regh(regs)			| CB14 RL H
+	RALM(r0)
+	andi. r0,r0,0xFF
+	stb r0,regh(regs)
+	setapflags(r0)
+	next
+
+rlrl:	lbz r0,regl(regs)			| CB15 RL L
+	RALM(r0)
+	andi. r0,r0,0xFF
+	stb r0,regl(regs)
+	setapflags(r0)
+	next
+
+rlrm:	lhz r3,regh(regs)			| CB16 RL M
+	lbzx r0,r3,targbase
+	RALM(r0)
+	andi. r0,r0,0xFF
+	stbx r0,r3,targbase
+	setapflags(r0)
+	next
+
+rlra:	RALM(rega)				| CB17 RL A
+	andi. rega,rega,0xFF
+	setapflags(rega)
+	next
+
+rrrb:	lbz r0,regb(regs)			| CB18 RR B
+	RARM(r0)
+	stb r0,regb(regs)
+	setapflags(r0)
+	next
+
+rrrc:	lbz r0,regc(regs)			| CB19 RR C
+	RARM(r0)
+	stb r0,regc(regs)
+	setapflags(r0)
+	next
+
+rrrd:	lbz r0,regd(regs)			| CB1A RR D
+	RARM(r0)
+	stb r0,regd(regs)
+	setapflags(r0)
+	next
+
+rrre:	lbz r0,rege(regs)			| CB1B RR E
+	RARM(r0)
+	stb r0,rege(regs)
+	setapflags(r0)
+	next
+
+rrrh:	lbz r0,regh(regs)			| CB1C RR H
+	RARM(r0)
+	stb r0,regh(regs)
+	setapflags(r0)
+	next
+
+rrrl:	lbz r0,regl(regs)			| CB1D RR L
+	RARM(r0)
+	stb r0,regl(regs)
+	setapflags(r0)
+	next
+
+rrrm:	lhz r3,regh(regs)			| CB1E RR M
+	lbzx r0,r3,targbase
+	RARM(r0)
+	stbx r0,r3,targbase
+	setapflags(r0)
+	next
+
+rrra:	RARM(rega)				| CB1F RR A
+	setapflags(rega)
+	next
+
+slab:	lbz r0,regb(regs)			| CB20 SLA B
+	SLAM(r0)
+	stb r0,regb(regs)
+	setapflags(r0)
+	next
+
+slac:	lbz r0,regc(regs)			| CB21 SLA C
+	SLAM(r0)
+	stb r0,regc(regs)
+	setapflags(r0)
+	next
+
+slad:	lbz r0,regd(regs)			| CB22 SLA D
+	SLAM(r0)
+	stb r0,regd(regs)
+	setapflags(r0)
+	next
+
+slae:	lbz r0,rege(regs)			| CB23 SLA E
+	SLAM(r0)
+	stb r0,rege(regs)
+	setapflags(r0)
+	next
+
+slah:	lbz r0,regh(regs)			| CB24 SLA H
+	SLAM(r0)
+	stb r0,regh(regs)
+	setapflags(r0)
+	next
+
+slal:	lbz r0,regl(regs)			| CB25 SLA L
+	SLAM(r0)
+	stb r0,regl(regs)
+	setapflags(r0)
+	next
+
+slam:	lhz r3,regh(regs)			| CB26 SLA M
+	lbzx r0,r3,targbase
+	SLAM(r0)
+	stbx r0,r3,targbase
+	setapflags(r0)
+	next
+
+slaa:	SLAM(rega)				| CB27 SLA A
+	setapflags(rega)
+	next
+
+srab:	lbz r0,regb(regs)			| CB28 SRA B
+	SRAM(r0)
+	stb r0,regb(regs)
+	setapflags(r0)
+	next
+
+srac:	lbz r0,regc(regs)			| CB29 SRA C
+	SRAM(r0)
+	stb r0,regc(regs)
+	setapflags(r0)
+	next
+
+srad:	lbz r0,regd(regs)			| CB2A SRA D
+	SRAM(r0)
+	stb r0,regd(regs)
+	setapflags(r0)
+	next
+
+srae:	lbz r0,rege(regs)			| CB2B SRA E
+	SRAM(r0)
+	stb r0,rege(regs)
+	setapflags(r0)
+	next
+
+srah:	lbz r0,regh(regs)			| CB2C SRA H
+	SRAM(r0)
+	stb r0,regh(regs)
+	setapflags(r0)
+	next
+
+sral:	lbz r0,regl(regs)			| CB2D SRA L
+	SRAM(r0)
+	stb r0,regl(regs)
+	setapflags(r0)
+	next
+
+sram:	lhz r3,regh(regs)			| CB2E SRA M
+	lbzx r0,r3,targbase
+	SRAM(r0)
+	stbx r0,r3,targbase
+	setapflags(r0)
+	next
+
+sraa:	SRAM(rega)				| CB2F SRA A
+	setapflags(rega)
+	next
+
+srlb:	lbz r0,regb(regs)			| CB38 SRL B
+	SRLM(r0)
+	stb r0,regb(regs)
+	setapflags(r0)
+	next
+
+srlc:	lbz r0,regc(regs)			| CB39 SRL C
+	SRLM(r0)
+	stb r0,regc(regs)
+	setapflags(r0)
+	next
+
+srld:	lbz r0,regd(regs)			| CB3A SRL D
+	SRLM(r0)
+	stb r0,regd(regs)
+	setapflags(r0)
+	next
+
+srle:	lbz r0,rege(regs)			| CB3B SRL E
+	SRLM(r0)
+	stb r0,rege(regs)
+	setapflags(r0)
+	next
+
+srlh:	lbz r0,regh(regs)			| CB3C SRL H
+	SRLM(r0)
+	stb r0,regh(regs)
+	setapflags(r0)
+	next
+
+srll:	lbz r0,regl(regs)			| CB3D SRL L
+	SRLM(r0)
+	stb r0,regl(regs)
+	setapflags(r0)
+	next
+
+srlm:	lhz r3,regh(regs)			| CB3E SRL M
+	lbzx r0,r3,targbase
+	SRLM(r0)
+	stbx r0,r3,targbase
+	setapflags(r0)
+	next
+
+srla:	SRLM(rega)				| CB3F SRL A
+	setapflags(rega)
+	next
+
+zset0:	ori regf,regf,0x40		| Used by BIT instructions.
+	next
+
+bit0b:	lbz r0,regb(regs)			| CB40 BIT 0,B
+	andi. r0,r0,1
+	dozf(0)
+	next
+
+bit0c:	lbz r0,regc(regs)			| CB41 BIT 0,C
+	andi. r0,r0,1
+	dozf(0)
+	next
+
+bit0d:	lbz r0,regd(regs)			| CB42 BIT 0,D
+	andi. r0,r0,1
+	dozf(0)
+	next
+
+bit0e:	lbz r0,rege(regs)			| CB43 BIT 0,E
+	andi. r0,r0,1
+	dozf(0)
+	next
+
+bit0h:	lbz r0,regh(regs)			| CB44 BIT 0,H
+	andi. r0,r0,1
+	dozf(0)
+	next
+
+bit0l:	lbz r0,regl(regs)			| CB45 BIT 0,L
+	andi. r0,r0,1
+	dozf(0)
+	next
+
+bit0m:	lhz r3,regh(regs)			| CB46 BIT 0,M
+	lbzx r0,r3,targbase
+	andi. r0,r0,1
+	beq bit0m2
+	andi. regf,regf,0xBF
+	next
+bit0m2:	ori regf,regf,0x40
+	next
+
+zset1:	ori regf,regf,0x40		| Used by BIT instructions.
+	next
+
+bit0a:	andi. r0,rega,1				| CB47 BIT 0,A
+	dozf(1)
+	next
+
+bit1b:	lbz r0,regb(regs)			| CB48 BIT 1,B
+	andi. r0,r0,2
+	dozf(1)
+	next
+
+bit1c:	lbz r0,regc(regs)			| CB49 BIT 1,C
+	andi. r0,r0,2
+	dozf(1)
+	next
+
+bit1d:	lbz r0,regd(regs)			| CB4A BIT 1,D
+	andi. r0,r0,2
+	dozf(1)
+	next
+
+bit1e:	lbz r0,rege(regs)			| CB4B BIT 1,E
+	andi. r0,r0,2
+	dozf(1)
+	next
+
+bit1h:	lbz r0,regh(regs)			| CB4C BIT 1,H
+	andi. r0,r0,2
+	dozf(1)
+	next
+
+bit1l:	lbz r0,regl(regs)			| CB4D BIT 1,L
+	andi. r0,r0,2
+	dozf(1)
+	next
+
+bit1m:	lhz r3,regh(regs)			| CB4E BIT 1,M
+	lbzx r0,r3,targbase
+	andi. r0,r0,2
+	beq bit1m2
+	andi. regf,regf,0xBF
+	next
+bit1m2:	ori regf,regf,0x40
+	next
+
+zset2:	ori regf,regf,0x40		| Used by BIT instructions.
+	next
+
+bit1a:	andi. r0,rega,2				| CB4F BIT 1,A
+	dozf(2)
+	next
+
+bit2b:	lbz r0,regb(regs)			| CB50 BIT 2,B
+	andi. r0,r0,4
+	dozf(2)
+	next
+
+bit2c:	lbz r0,regc(regs)			| CB51 BIT 2,C
+	andi. r0,r0,4
+	dozf(2)
+	next
+
+bit2d:	lbz r0,regd(regs)			| CB52 BIT 2,D
+	andi. r0,r0,4
+	dozf(2)
+	next
+
+bit2e:	lbz r0,rege(regs)			| CB53 BIT 2,E
+	andi. r0,r0,4
+	dozf(2)
+	next
+
+bit2h:	lbz r0,regh(regs)			| CB54 BIT 2,H
+	andi. r0,r0,4
+	dozf(2)
+	next
+
+bit2l:	lbz r0,regl(regs)			| CB55 BIT 2,L
+	andi. r0,r0,4
+	dozf(2)
+	next
+
+bit2m:	lhz r3,regh(regs)			| CB56 BIT 2,M
+	lbzx r0,r3,targbase
+	andi. r0,r0,4
+	beq bit2m2
+	andi. regf,regf,0xBF
+	next
+bit2m2:	ori regf,regf,0x40
+	next
+
+zset3:	ori regf,regf,0x40		| Used by BIT instructions.
+	next
+
+bit2a:	andi. r0,rega,8				| CB57 BIT 2,A
+	dozf(3)
+	next
+
+bit3b:	lbz r0,regb(regs)			| CB58 BIT 3,B
+	andi. r0,r0,8
+	dozf(3)
+	next
+
+bit3c:	lbz r0,regc(regs)			| CB59 BIT 3,C
+	andi. r0,r0,8
+	dozf(3)
+	next
+
+bit3d:	lbz r0,regd(regs)			| CB5A BIT 3,D
+	andi. r0,r0,8
+	dozf(3)
+	next
+
+bit3e:	lbz r0,rege(regs)			| CB5B BIT 3,E
+	andi. r0,r0,8
+	dozf(3)
+	next
+
+bit3h:	lbz r0,regh(regs)			| CB5C BIT 3,H
+	andi. r0,r0,8
+	dozf(3)
+	next
+
+bit3l:	lbz r0,regl(regs)			| CB5D BIT 3,L
+	andi. r0,r0,8
+	dozf(3)
+	next
+
+bit3m:	lhz r3,regh(regs)			| CB5E BIT 3,M
+	lbzx r0,r3,targbase
+	andi. r0,r0,8
+	beq bit3m2
+	andi. regf,regf,0xBF
+	next
+bit3m2:	ori regf,regf,0x40
+	next
+
+zset4:	ori regf,regf,0x40		| Used by BIT instructions.
+	next
+
+bit3a:	andi. r0,rega,8				| CB5F BIT 3,A
+	dozf(4)
+	next
+
+bit4b:	lbz r0,regb(regs)			| CB60 BIT 4,B
+	andi. r0,r0,0x10
+	dozf(4)
+	next
+
+bit4c:	lbz r0,regc(regs)			| CB61 BIT 4,C
+	andi. r0,r0,0x10
+	dozf(4)
+	next
+
+bit4d:	lbz r0,regd(regs)			| CB62 BIT 4,D
+	andi. r0,r0,0x10
+	dozf(4)
+	next
+
+bit4e:	lbz r0,rege(regs)			| CB63 BIT 4,E
+	andi. r0,r0,0x10
+	dozf(4)
+	next
+
+bit4h:	lbz r0,regh(regs)			| CB64 BIT 4,H
+	andi. r0,r0,0x10
+	dozf(4)
+	next
+
+bit4l:	lbz r0,regl(regs)			| CB65 BIT 4,L
+	andi. r0,r0,0x10
+	dozf(4)
+	next
+
+bit4m:	lhz r3,regh(regs)			| CB66 BIT 4,M
+	lbzx r0,r3,targbase
+	andi. r0,r0,0x10
+	beq bit4m2
+	andi. regf,regf,0xBF
+	next
+bit4m2:	ori regf,regf,0x40
+	next
+
+zset5:	ori regf,regf,0x40	| Used by BIT instructions.
+	next
+
+bit4a:	andi. r0,rega,0x10			| CB67 BIT 4,A
+	dozf(5)
+	next
+
+bit5b:	lbz r0,regb(regs)			| CB68 BIT 5,B
+	andi. r0,r0,0x20
+	dozf(5)
+	next
+
+bit5c:	lbz r0,regc(regs)			| CB69 BIT 5,C
+	andi. r0,r0,0x20
+	dozf(5)
+	next
+
+bit5d:	lbz r0,regd(regs)			| CB6A BIT 5,D
+	andi. r0,r0,0x20
+	dozf(5)
+	next
+
+bit5e:	lbz r0,rege(regs)			| CB6B BIT 5,E
+	andi. r0,r0,0x20
+	dozf(5)
+	next
+
+bit5h:	lbz r0,regh(regs)			| CB6C BIT 5,H
+	andi. r0,r0,0x20
+	dozf(5)
+	next
+
+bit5l:	lbz r0,regl(regs)			| CB6D BIT 5,L
+	andi. r0,r0,0x20
+	dozf(5)
+	next
+
+bit5m:	lhz r3,regh(regs)			| CB6E BIT 5,M
+	lbzx r0,r3,targbase
+	andi. r0,r0,0x20
+	beq bit5m2
+	andi. regf,regf,0xBF
+	next
+bit5m2:	ori regf,regf,0x40
+	next
+
+zset6:	ori regf,regf,0x40	| Used by BIT instructions.
+	next
+
+bit5a:	andi. r0,rega,0x20			| CB6F BIT 5,A
+	dozf(6)
+	next
+
+bit6b:	lbz r0,regb(regs)			| CB70 BIT 6,B
+	andi. r0,r0,0x40
+	dozf(6)
+	next
+
+bit6c:	lbz r0,regc(regs)			| CB71 BIT 6,C
+	andi. r0,r0,0x40
+	dozf(6)
+	next
+
+bit6d:	lbz r0,regd(regs)			| CB72 BIT 6,D
+	andi. r0,r0,0x40
+	dozf(6)
+	next
+
+bit6e:	lbz r0,rege(regs)			| CB73 BIT 6,E
+	andi. r0,r0,0x40
+	dozf(6)
+	next
+
+bit6h:	lbz r0,regh(regs)			| CB74 BIT 6,H
+	andi. r0,r0,0x40
+	dozf(6)
+	next
+
+bit6l:	lbz r0,regl(regs)			| CB75 BIT 6,L
+	andi. r0,r0,0x40
+	dozf(6)
+	next
+
+bit6m:	lhz r3,regh(regs)			| CB76 BIT 6,M
+	lbzx r0,r3,targbase
+	andi. r0,r0,0x40
+	beq bit6m2
+	andi. regf,regf,0xBF
+	next
+bit6m2:	ori regf,regf,0x40
+	next
+
+zset7:	ori regf,regf,0x40	| Used by BIT instructions.
+	next
+
+bit6a:	andi. r0,rega,0x40			| CB77 BIT 6,A
+	dozf(7)
+	next
+
+bit7b:	lbz r0,regb(regs)			| CB78 BIT 7,B
+	andi. r0,r0,0x80
+	dozf(7)
+	next
+
+bit7c:	lbz r0,regc(regs)			| CB79 BIT 7,C
+	andi. r0,r0,0x80
+	dozf(7)
+	next
+
+bit7d:	lbz r0,regd(regs)			| CB7A BIT 7,D
+	andi. r0,r0,0x80
+	dozf(7)
+	next
+
+bit7e:	lbz r0,rege(regs)			| CB7B BIT 7,E
+	andi. r0,r0,0x80
+	dozf(7)
+	next
+
+bit7h:	lbz r0,regh(regs)			| CB7C BIT 7,H
+	andi. r0,r0,0x80
+	dozf(7)
+	next
+
+bit7l:	lbz r0,regl(regs)			| CB7D BIT 7,L
+	andi. r0,r0,0x80
+	dozf(7)
+	next
+
+bit7m:	lhz r3,regh(regs)			| CB7E BIT 7,M
+	lbzx r0,r3,targbase
+	andi. r0,r0,0x80
+	beq bit7m2
+	andi. regf,regf,0xBF
+	next
+bit7m2:	ori regf,regf,0x40
+	next
+
+zset8:	ori regf,regf,0x40	| Used by BIT instructions.
+	next
+
+bit7a:	andi. r0,rega,0x80			| CB7F BIT 7,A
+	dozf(8)
+	next
+
+res0b:	lbz r0,regb(regs)			| CB80 RES 0,B
+	andi. r0,r0,0xFE
+	stb r0,regb(regs)
+	next
+
+res0c:	lbz r0,regc(regs)			| CB81 RES 0,C
+	andi. r0,r0,0xFE
+	stb r0,regc(regs)
+	next
+
+res0d:	lbz r0,regd(regs)			| CB82 RES 0,D
+	andi. r0,r0,0xFE
+	stb r0,regd(regs)
+	next
+
+res0e:	lbz r0,rege(regs)			| CB83 RES 0,E
+	andi. r0,r0,0xFE
+	stb r0,rege(regs)
+	next
+
+res0h:	lbz r0,regh(regs)			| CB84 RES 0,H
+	andi. r0,r0,0xFE
+	stb r0,regh(regs)
+	next
+
+res0l:	lbz r0,regl(regs)			| CB85 RES 0,L
+	andi. r0,r0,0xFE
+	stb r0,regl(regs)
+	next
+
+res0m:	lhz r3,regh(regs)			| CB86 RES 0,M
+	lbzx r0,r3,targbase
+	andi. r0,r0,0xFE
+	stbx r0,r3,targbase
+	next
+
+res0a:	andi. rega,rega,0xFE			| CB87 RES 0,A
+	next
+
+res1b:	lbz r0,regb(regs)			| CB88 RES 1,B
+	andi. r0,r0,0xFD
+	stb r0,regb(regs)
+	next
+
+res1c:	lbz r0,regc(regs)			| CB89 RES 1,C
+	andi. r0,r0,0xFD
+	stb r0,regc(regs)
+	next
+
+res1d:	lbz r0,regd(regs)			| CB8A RES 1,D
+	andi. r0,r0,0xFD
+	stb r0,regd(regs)
+	next
+
+res1e:	lbz r0,rege(regs)			| CB8B RES 1,E
+	andi. r0,r0,0xFD
+	stb r0,rege(regs)
+	next
+
+res1h:	lbz r0,regh(regs)			| CB8C RES 1,H
+	andi. r0,r0,0xFD
+	stb r0,regh(regs)
+	next
+
+res1l:	lbz r0,regl(regs)			| CB8D RES 1,L
+	andi. r0,r0,0xFD
+	stb r0,regl(regs)
+	next
+
+res1m:	lhz r3,regh(regs)			| CB8E RES 1,M
+	lbzx r0,r3,targbase
+	andi. r0,r0,0xFD
+	stbx r0,r3,targbase
+	next
+
+res1a:	andi. rega,rega,0xFD			| CB8F RES 1,A
+	next
+
+res2b:	lbz r0,regb(regs)			| CB90 RES 2,B
+	andi. r0,r0,0xFB
+	stb r0,regb(regs)
+	next
+
+res2c:	lbz r0,regc(regs)			| CB91 RES 2,C
+	andi. r0,r0,0xFB
+	stb r0,regc(regs)
+	next
+
+res2d:	lbz r0,regd(regs)			| CB92 RES 2,D
+	andi. r0,r0,0xFB
+	stb r0,regd(regs)
+	next
+
+res2e:	lbz r0,rege(regs)			| CB93 RES 2,E
+	andi. r0,r0,0xFB
+	stb r0,rege(regs)
+	next
+
+res2h:	lbz r0,regh(regs)			| CB94 RES 2,H
+	andi. r0,r0,0xFB
+	stb r0,regh(regs)
+	next
+
+res2l:	lbz r0,regl(regs)			| CB95 RES 2,L
+	andi. r0,r0,0xFB
+	stb r0,regl(regs)
+	next
+
+res2m:	lhz r3,regh(regs)			| CB96 RES 2,M
+	lbzx r0,r3,targbase
+	andi. r0,r0,0xFB
+	stbx r0,r3,targbase
+	next
+
+res2a:	andi. rega,rega,0xFB			| CB97 RES 2,A
+	next
+
+res3b:	lbz r0,regb(regs)			| CB98 RES 3,B
+	andi. r0,r0,0xF7
+	stb r0,regb(regs)
+	next
+
+res3c:	lbz r0,regc(regs)			| CB99 RES 3,C
+	andi. r0,r0,0xF7
+	stb r0,regc(regs)
+	next
+
+res3d:	lbz r0,regd(regs)			| CB9A RES 3,D
+	andi. r0,r0,0xF7
+	stb r0,regd(regs)
+	next
+
+res3e:	lbz r0,rege(regs)			| CB9B RES 3,E
+	andi. r0,r0,0xF7
+	stb r0,rege(regs)
+	next
+
+res3h:	lbz r0,regh(regs)			| CB9C RES 3,H
+	andi. r0,r0,0xF7
+	stb r0,regh(regs)
+	next
+
+res3l:	lbz r0,regl(regs)			| CB9D RES 3,L
+	andi. r0,r0,0xF7
+	stb r0,regl(regs)
+	next
+
+res3m:	lhz r3,regh(regs)			| CB9E RES 3,M
+	lbzx r0,r3,targbase
+	andi. r0,r0,0xF7
+	stbx r0,r3,targbase
+	next
+
+res3a:	andi. rega,rega,0xF7	 		| CB9F RES 3,A
+	next
+
+res4b:	lbz r0,regb(regs)			| CBA0 RES 4,B
+	andi. r0,r0,0xEF
+	stb r0,regb(regs)
+	next
+
+res4c:	lbz r0,regc(regs)			| CBA1 RES 4,C
+	andi. r0,r0,0xEF
+	stb r0,regc(regs)
+	next
+
+res4d:	lbz r0,regd(regs)			| CBA2 RES 4,D
+	andi. r0,r0,0xEF
+	stb r0,regd(regs)
+	next
+
+res4e:	lbz r0,rege(regs)			| CBA3 RES 4,E
+	andi. r0,r0,0xEF
+	stb r0,rege(regs)
+	next
+
+res4h:	lbz r0,regh(regs)			| CBA4 RES 4,H
+	andi. r0,r0,0xEF
+	stb r0,regh(regs)
+	next
+
+res4l:	lbz r0,regl(regs)			| CBA5 RES 4,L
+	andi. r0,r0,0xEF
+	stb r0,regl(regs)
+	next
+
+res4m:	lhz r3,regh(regs)			| CBA6 RES 4,M
+	lbzx r0,r3,targbase
+	andi. r0,r0,0xEF
+	stbx r0,r3,targbase
+	next
+
+res4a:	andi. rega,rega,0xEF	 		| CBA7 RES 4,A
+	next
+
+res5b:	lbz r0,regb(regs)			| CBA8 RES 5,B
+	andi. r0,r0,0xDF
+	stb r0,regb(regs)
+	next
+
+res5c:	lbz r0,regc(regs)			| CBA9 RES 5,C
+	andi. r0,r0,0xDF
+	stb r0,regc(regs)
+	next
+
+res5d:	lbz r0,regd(regs)			| CBAA RES 5,D
+	andi. r0,r0,0xDF
+	stb r0,regd(regs)
+	next
+
+res5e:	lbz r0,rege(regs)			| CBAB RES 5,E
+	andi. r0,r0,0xDF
+	stb r0,rege(regs)
+	next
+
+res5h:	lbz r0,regh(regs)			| CBAC RES 5,H
+	andi. r0,r0,0xDF
+	stb r0,regh(regs)
+	next
+
+res5l:	lbz r0,regl(regs)			| CBAD RES 5,L
+	andi. r0,r0,0xDF
+	stb r0,regl(regs)
+	next
+
+res5m:	lhz r3,regh(regs)			| CBAE RES 5,M
+	lbzx r0,r3,targbase
+	andi. r0,r0,0xDF
+	stbx r0,r3,targbase
+	next
+
+res5a:	andi. rega,rega,0xDF	 		| CBAF RES 5,A
+	next
+
+res6b:	lbz r0,regb(regs)			| CBB0 RES 6,B
+	andi. r0,r0,0xBF
+	stb r0,regb(regs)
+	next
+
+res6c:	lbz r0,regc(regs)			| CBB1 RES 6,C
+	andi. r0,r0,0xBF
+	stb r0,regc(regs)
+	next
+
+res6d:	lbz r0,regd(regs)			| CBB2 RES 6,D
+	andi. r0,r0,0xBF
+	stb r0,regd(regs)
+	next
+
+res6e:	lbz r0,rege(regs)			| CBB3 RES 6,E
+	andi. r0,r0,0xBF
+	stb r0,rege(regs)
+	next
+
+res6h:	lbz r0,regh(regs)			| CBB4 RES 6,H
+	andi. r0,r0,0xBF
+	stb r0,regh(regs)
+	next
+
+res6l:	lbz r0,regl(regs)			| CBB5 RES 6,L
+	andi. r0,r0,0xBF
+	stb r0,regl(regs)
+	next
+
+res6m:	lhz r3,regh(regs)			| CBB6 RES 6,M
+	lbzx r0,r3,targbase
+	andi. r0,r0,0xBF
+	stbx r0,r3,targbase
+	next
+
+res6a:	andi. rega,rega,0xBF	 		| CBB7 RES 6,A
+	next
+
+res7b:	lbz r0,regb(regs)			| CBB8 RES 7,B
+	andi. r0,r0,0x7F
+	stb r0,regb(regs)
+	next
+
+res7c:	lbz r0,regc(regs)			| CBB9 RES 7,C
+	andi. r0,r0,0x7F
+	stb r0,regc(regs)
+	next
+
+res7d:	lbz r0,regd(regs)			| CBBA RES 7,D
+	andi. r0,r0,0x7F
+	stb r0,regd(regs)
+	next
+
+res7e:	lbz r0,rege(regs)			| CBBB RES 7,E
+	andi. r0,r0,0x7F
+	stb r0,rege(regs)
+	next
+
+res7h:	lbz r0,regh(regs)			| CBBC RES 7,H
+	andi. r0,r0,0x7F
+	stb r0,regh(regs)
+	next
+
+res7l:	lbz r0,regl(regs)			| CBBD RES 7,L
+	andi. r0,r0,0x7F
+	stb r0,regl(regs)
+	next
+
+res7m:	lhz r3,regh(regs)			| CBBE RES 7,M
+	lbzx r0,r3,targbase
+	andi. r0,r0,0x7F
+	stbx r0,r3,targbase
+	next
+
+res7a:	andi. rega,rega,0x7F	 		| CBBF RES 7,A
+	next
+
+set0b:	lbz r0,regb(regs)			| CBC0 SET 0,B
+	ori r0,r0,1
+	stb r0,regb(regs)
+	next
+
+set0c:	lbz r0,regc(regs)			| CBC1 SET 0,C
+	ori r0,r0,1
+	stb r0,regc(regs)
+	next
+
+set0d:	lbz r0,regd(regs)			| CBC2 SET 0,D
+	ori r0,r0,1
+	stb r0,regd(regs)
+	next
+
+set0e:	lbz r0,rege(regs)			| CBC3 SET 0,E
+	ori r0,r0,1
+	stb r0,rege(regs)
+	next
+
+set0h:	lbz r0,regh(regs)			| CBC4 SET 0,H
+	ori r0,r0,1
+	stb r0,regh(regs)
+	next
+
+set0l:	lbz r0,regl(regs)			| CBC5 SET 0,L
+	ori r0,r0,1
+	stb r0,regl(regs)
+	next
+
+set0m:	lhz r3,regh(regs)			| CBC6 SET 0,M
+	lbzx r0,r3,targbase
+	ori r0,r0,1
+	stbx r0,r3,targbase
+	next
+
+set0a:	ori rega,rega,1		 		| CBC7 SET 0,A
+	next
+
+set1b:	lbz r0,regb(regs)			| CBC8 SET 1,B
+	ori r0,r0,2
+	stb r0,regb(regs)
+	next
+
+set1c:	lbz r0,regc(regs)			| CBC9 SET 1,C
+	ori r0,r0,2
+	stb r0,regc(regs)
+	next
+
+set1d:	lbz r0,regd(regs)			| CBCA SET 1,D
+	ori r0,r0,2
+	stb r0,regd(regs)
+	next
+
+set1e:	lbz r0,rege(regs)			| CBCB SET 1,E
+	ori r0,r0,2
+	stb r0,rege(regs)
+	next
+
+set1h:	lbz r0,regh(regs)			| CBCC SET 1,H
+	ori r0,r0,2
+	stb r0,regh(regs)
+	next
+
+set1l:	lbz r0,regl(regs)			| CBCD SET 1,L
+	ori r0,r0,2
+	stb r0,regl(regs)
+	next
+
+set1m:	lhz r3,regh(regs)			| CBCE SET 1,M
+	lbzx r0,r3,targbase
+	ori r0,r0,2
+	stbx r0,r3,targbase
+	next
+
+set1a:	ori rega,rega,2		 		| CBCF SET 1,A
+	next
+
+set2b:	lbz r0,regb(regs)			| CBD0 SET 2,B
+	ori r0,r0,4
+	stb r0,regb(regs)
+	next
+
+set2c:	lbz r0,regc(regs)			| CBD1 SET 2,C
+	ori r0,r0,4
+	stb r0,regc(regs)
+	next
+
+set2d:	lbz r0,regd(regs)			| CBD2 SET 2,D
+	ori r0,r0,4
+	stb r0,regd(regs)
+	next
+
+set2e:	lbz r0,rege(regs)			| CBD3 SET 2,E
+	ori r0,r0,4
+	stb r0,rege(regs)
+	next
+
+set2h:	lbz r0,regh(regs)			| CBD4 SET 2,H
+	ori r0,r0,4
+	stb r0,regh(regs)
+	next
+
+set2l:	lbz r0,regl(regs)			| CBD5 SET 2,L
+	ori r0,r0,4
+	stb r0,regl(regs)
+	next
+
+set2m:	lhz r3,regh(regs)			| CBD6 SET 2,M
+	lbzx r0,r3,targbase
+	ori r0,r0,4
+	stbx r0,r3,targbase
+	next
+
+set2a:	ori rega,rega,4		 		| CBD7 SET 2,A
+	next
+
+set3b:	lbz r0,regb(regs)			| CBD8 SET 3,B
+	ori r0,r0,8
+	stb r0,regb(regs)
+	next
+
+set3c:	lbz r0,regc(regs)			| CBD9 SET 3,C
+	ori r0,r0,8
+	stb r0,regc(regs)
+	next
+
+set3d:	lbz r0,regd(regs)			| CBDA SET 3,D
+	ori r0,r0,8
+	stb r0,regd(regs)
+	next
+
+set3e:	lbz r0,rege(regs)			| CBDB SET 3,E
+	ori r0,r0,8
+	stb r0,rege(regs)
+	next
+
+set3h:	lbz r0,regh(regs)			| CBDC SET 3,H
+	ori r0,r0,8
+	stb r0,regh(regs)
+	next
+
+set3l:	lbz r0,regl(regs)			| CBDD SET 3,L
+	ori r0,r0,8
+	stb r0,regl(regs)
+	next
+
+set3m:	lhz r3,regh(regs)			| CBDE SET 3,M
+	lbzx r0,r3,targbase
+	ori r0,r0,8
+	stbx r0,r3,targbase
+	next
+
+set3a:	ori rega,rega,8		 		| CBDF SET 3,A
+	next
+
+set4b:	lbz r0,regb(regs)			| CBE0 SET 4,B
+	ori r0,r0,0x10
+	stb r0,regb(regs)
+	next
+
+set4c:	lbz r0,regc(regs)			| CBE1 SET 4,C
+	ori r0,r0,0x10
+	stb r0,regc(regs)
+	next
+
+set4d:	lbz r0,regd(regs)			| CBE2 SET 4,D
+	ori r0,r0,0x10
+	stb r0,regd(regs)
+	next
+
+set4e:	lbz r0,rege(regs)			| CBE3 SET 4,E
+	ori r0,r0,0x10
+	stb r0,rege(regs)
+	next
+
+set4h:	lbz r0,regh(regs)			| CBE4 SET 4,H
+	ori r0,r0,0x10
+	stb r0,regh(regs)
+	next
+
+set4l:	lbz r0,regl(regs)			| CBE5 SET 4,L
+	ori r0,r0,0x10
+	stb r0,regl(regs)
+	next
+
+set4m:	lhz r3,regh(regs)			| CBE6 SET 4,M
+	lbzx r0,r3,targbase
+	ori r0,r0,0x10
+	stbx r0,r3,targbase
+	next
+
+set4a:	ori rega,rega,0x10	 		| CBE7 SET 4,A
+	next
+
+set5b:	lbz r0,regb(regs)			| CBE8 SET 5,B
+	ori r0,r0,0x20
+	stb r0,regb(regs)
+	next
+
+set5c:	lbz r0,regc(regs)			| CBE9 SET 5,C
+	ori r0,r0,0x20
+	stb r0,regc(regs)
+	next
+
+set5d:	lbz r0,regd(regs)			| CBEA SET 5,D
+	ori r0,r0,0x20
+	stb r0,regd(regs)
+	next
+
+set5e:	lbz r0,rege(regs)			| CBEB SET 5,E
+	ori r0,r0,0x20
+	stb r0,rege(regs)
+	next
+
+set5h:	lbz r0,regh(regs)			| CBEC SET 5,H
+	ori r0,r0,0x20
+	stb r0,regh(regs)
+	next
+
+set5l:	lbz r0,regl(regs)			| CBED SET 5,L
+	ori r0,r0,0x20
+	stb r0,regl(regs)
+	next
+
+set5m:	lhz r3,regh(regs)			| CBEE SET 5,M
+	lbzx r0,r3,targbase
+	ori r0,r0,0x20
+	stbx r0,r3,targbase
+	next
+
+set5a:	ori rega,rega,0x20	 		| CBEF SET 5,A
+	next
+
+set6b:	lbz r0,regb(regs)			| CBF0 SET 6,B
+	ori r0,r0,0x40
+	stb r0,regb(regs)
+	next
+
+set6c:	lbz r0,regc(regs)			| CBF1 SET 6,C
+	ori r0,r0,0x40
+	stb r0,regc(regs)
+	next
+
+set6d:	lbz r0,regd(regs)			| CBF2 SET 6,D
+	ori r0,r0,0x40
+	stb r0,regd(regs)
+	next
+
+set6e:	lbz r0,rege(regs)			| CBF3 SET 6,E
+	ori r0,r0,0x40
+	stb r0,rege(regs)
+	next
+
+set6h:	lbz r0,regh(regs)			| CBF4 SET 6,H
+	ori r0,r0,0x40
+	stb r0,regh(regs)
+	next
+
+set6l:	lbz r0,regl(regs)			| CBF5 SET 6,L
+	ori r0,r0,0x40
+	stb r0,regl(regs)
+	next
+
+set6m:	lhz r3,regh(regs)			| CBF6 SET 6,M
+	lbzx r0,r3,targbase
+	ori r0,r0,0x40
+	stbx r0,r3,targbase
+	next
+
+set6a:	ori rega,rega,0x40	 		| CBF7 SET 6,A
+	next
+
+set7b:	lbz r0,regb(regs)			| CBF8 SET 7,B
+	ori r0,r0,0x80
+	stb r0,regb(regs)
+	next
+
+set7c:	lbz r0,regc(regs)			| CBF9 SET 7,C
+	ori r0,r0,0x80
+	stb r0,regc(regs)
+	next
+
+set7d:	lbz r0,regd(regs)			| CBFA SET 7,D
+	ori r0,r0,0x80
+	stb r0,regd(regs)
+	next
+
+set7e:	lbz r0,rege(regs)			| CBFB SET 7,E
+	ori r0,r0,0x80
+	stb r0,rege(regs)
+	next
+
+set7h:	lbz r0,regh(regs)			| CBFC SET 7,H
+	ori r0,r0,0x80
+	stb r0,regh(regs)
+	next
+
+set7l:	lbz r0,regl(regs)			| CBFD SET 7,L
+	ori r0,r0,0x80
+	stb r0,regl(regs)
+	next
+
+set7m:	lhz r3,regh(regs)			| CBFE SET 7,M
+	lbzx r0,r3,targbase
+	ori r0,r0,0x80
+	stbx r0,r3,targbase
+	next
+
+set7a:	ori rega,rega,0x80	 		| CBFF SET 7,A
+	next
+
+dadixb:	lhz r0,regb(regs)			| DD09 DAD IX,B
+	lhz r3,regix(regs)
+	add r3,r3,r0
+	sth r3,regix(regs)
+	rlwimi regf,r3,16,30,31
+	next
+
+dadixd:	lhz r0,regd(regs)			| DD19 DAD IX,D
+	lhz r3,regix(regs)
+	add r3,r3,r0
+	sth r3,regix(regs)
+	rlwimi regf,r3,16,30,31
+	next
+
+lxiix:	lbzux r3,pseudopc,regcon01		| DD21 LXI IX,nnnn
+	stb r3,regxl(regs)
+	lbzux r3,pseudopc,regcon01
+	stb r3,regxh(regs)
+	next
+
+sixd:	getaddr2(pseudopc)			| DD22 SIXD addr
+	add r3,r3,targbase
+	lbz r0,regxl(regs)
+	stb r0,0(r3)
+	lbz r0,regxh(regs)
+	stb r0,1(r3)
+	next
+
+inxix:	lhz r3,regix(regs)			| DD23 INX IX
+	add r3,r3,regcon01
+	sth r3,regix(regs)
+	next
+
+inrxh:	lbz r3,regxh(regs)			| DD24 INR XH (undocumented)
+	inrflag(r3)
+	stb r3,regxh(regs)
+	next
+
+dcrxh:	lbz r3,regxh(regs)			| DD25 DCR XH (undocumented)
+	dcrflag(r3)
+	stb r3,regxh(regs)
+	next
+
+mvixh:	lbzux r3,pseudopc,regcon01		| DD26 MVI XH,nn (undocumented)
+	stb r3,regxh(regs)
+	next
+
+dadixx:	lhz r3,regix(regs)			| DD29 DAD IX,IX (mult by 2)
+	add r3,r3,r3
+	sth r3,regix(regs)
+	rlwimi regf,r3,16,30,31
+	next
+
+lixd:	getaddr2(pseudopc)			| DD2A LIXD addr
+	add r3,r3,targbase
+	lbz r0,0(r3)
+	stb r0,regxl(regs)
+	lbz r0,1(r3)
+	stb r0,regxh(regs)
+	next
+
+dcxix:	lhz r3,regix(regs)			| DD2B DCX IX
+	sub r3,r3,regcon01
+	sth r3,regix(regs)
+	next
+
+inrxl:	lbz r3,regxl(regs)			| DD2C INR XL (undocumented)
+	inrflag(r3)
+	stb r3,regxl(regs)
+	next
+
+dcrxl:	lbz r3,regxl(regs)			| DD2D DCR XL (undocumented)
+	dcrflag(r3)
+	stb r3,regxl(regs)
+	next
+
+mvixl:	lbzux r3,pseudopc,regcon01		| DD2E MVI XL,nn (undocumented)
+	stb r3,regxl(regs)
+	next
+
+inrix:	calcind(regix)				| DD34 INR (IX+d)
+	lbzx r3,targbase,r0
+	rlwimi r3,regcon01,8,16,23
+	lbzx r4,r3,aflagptr
+	rlwimi regf,r4,0,24,30
+	lbzx r3,r3,sumptr
+	stbx r3,targbase,r0
+	next
+
+dcrix:	calcind(regix)				| DD35 DCR (IX+d)
+	lbzx r3,targbase,r0
+	rlwimi r3,regconm1,8,16,23
+	lbzx r4,r3,sflagptr
+	rlwimi regf,r4,0,24,30
+	lbzx r3,r3,sumptr
+	stbx r3,targbase,r0
+	next
+
+mviix:	calcind(regix)				| DD36 MVI (IX+d),nn
+	lbzux r3,pseudopc,regcon01
+	stbx r3,targbase,r0
+	next
+
+dadixs:	subf r0,targbase,pseudosp		| DD39 DAD IX,SP
+	add r0,r0,regcon01
+	lhz r3,regix(regs)
+	add r3,r3,r0
+	sth r3,regix(regs)
+	rlwimi regf,r3,16,30,31
+	next
+
+movbxh:	lbz r3,regxh(regs)			| DD44 MOV B,XH (undocumented)
+	stb r3,regb(regs)
+	next
+
+movbxl:	lbz r3,regxl(regs)			| DD45 MOV B,XL (undocumented)
+	stb r3,regb(regs)
+	next
+
+movbix:	calcind(regix)				| DD46 MOV B,(IX+d)
+	lbzx r3,targbase,r0
+	stb r3,regb(regs)
+	next
+
+movcxh:	lbz r3,regxh(regs)			| DD4C MOV C,XH (undocumented)
+	stb r3,regc(regs)
+	next
+
+movcxl:	lbz r3,regxl(regs)			| DD4D MOV C,XL (undocumented)
+	stb r3,regc(regs)
+	next
+
+movcix:	calcind(regix)				| DD4E MOV C,(IX+d)
+	lbzx r3,targbase,r0
+	stb r3,regc(regs)
+	next
+
+movdxh:	lbz r3,regxh(regs)			| DD54 MOV D,XH (undocumented)
+	stb r3,regd(regs)
+	next
+
+movdxl:	lbz r3,regxl(regs)			| DD55 MOV D,XL (undocumented)
+	stb r3,regd(regs)
+	next
+
+movdix:	calcind(regix)				| DD56 MOV D,(IX+d)
+	lbzx r3,targbase,r0
+	stb r3,regd(regs)
+	next
+
+movexh:	lbz r3,regxh(regs)			| DD5C MOV E,XH (undocumented)
+	stb r3,rege(regs)
+	next
+
+movexl:	lbz r3,regxl(regs)			| DD5D MOV E,XL (undocumented)
+	stb r3,rege(regs)
+	next
+
+moveix:	calcind(regix)				| DD5E MOV E,(IX+d)
+	lbzx r3,targbase,r0
+	stb r3,rege(regs)
+	next
+
+movxhb:	lbz r3,regb(regs)			| DD60 MOV XH,B (undocumented)
+	stb r3,regxh(regs)
+	next
+
+movxhc:	lbz r3,regc(regs)			| DD61 MOV XH,C (undocumented)
+	stb r3,regxh(regs)
+	next
+
+movxhd:	lbz r3,regd(regs)			| DD62 MOV XH,D (undocumented)
+	stb r3,regxh(regs)
+	next
+
+movxhe:	lbz r3,rege(regs)			| DD63 MOV XH,E (undocumented)
+	stb r3,regxh(regs)
+	next
+
+mvxhxh:	next					| DD64 MOV XH,XH (undocumented)
+
+mvxhxl:	lbz r3,regxl(regs)			| DD65 MOV XH,XL (undocumented)
+	stb r3,regxh(regs)
+	next
+
+movhix:	calcind(regix)				| DD66 MOV H,(IX+d)
+	lbzx r3,targbase,r0
+	stb r3,regh(regs)
+	next
+
+movxha:	stb rega,regxh(regs)			| DD67 MOV XH,A (undocumented)
+	next
+
+movxlb:	lbz r3,regb(regs)			| DD68 MOV XL,B (undocumented)
+	stb r3,regxl(regs)
+	next
+
+movxlc:	lbz r3,regc(regs)			| DD69 MOV XL,C (undocumented)
+	stb r3,regxl(regs)
+	next
+
+movxld:	lbz r3,regd(regs)			| DD6A MOV XL,D (undocumented)
+	stb r3,regxl(regs)
+	next
+
+movxle:	lbz r3,rege(regs)			| DD6B MOV XL,E (undocumented)
+	stb r3,regxl(regs)
+	next
+
+mvxlxh:	lbz r3,regxh(regs)			| DD6C MOV XL,XH (undocumented)
+	stb r3,regxl(regs)
+	next
+
+mvxlxl:	next					| DD6D MOV XL,XL (undocumented)
+
+movlix:	calcind(regix)				| DD6E MOV L,(IX+d)
+	lbzx r3,targbase,r0
+	stb r3,regl(regs)
+	next
+
+movxla:	stb rega,regxl(regs)			| DD6F MOV XL,A (undocumented)
+	next
+
+movixb:	calcind(regix)				| DD70 MOV (IX+d),B
+	lbz r3,regb(regs)
+	stbx r3,targbase,r0
+	next
+
+movixc:	calcind(regix)				| DD71 MOV (IX+d),C
+	lbz r3,regc(regs)
+	stbx r3,targbase,r0
+	next
+
+movixd:	calcind(regix)				| DD72 MOV (IX+d),D
+	lbz r3,regd(regs)
+	stbx r3,targbase,r0
+	next
+
+movixe:	calcind(regix)				| DD73 MOV (IX+d),E
+	lbz r3,rege(regs)
+	stbx r3,targbase,r0
+	next
+
+movixh:	calcind(regix)				| DD74 MOV (IX+d),H
+	lbz r3,regh(regs)
+	stbx r3,targbase,r0
+	next
+
+movixl:	calcind(regix)				| DD75 MOV (IX+d),L
+	lbz r3,regl(regs)
+	stbx r3,targbase,r0
+	next
+
+movixa:	calcind(regix)				| DD77 MOV (IX+d),A
+	stbx rega,targbase,r0
+	next
+
+movaxh:	lbz rega,regxh(regs)			| DD7C MOV A,XH (undocumented)
+	next
+
+movaxl:	lbz rega,regxl(regs)			| DD7D MOV A,XL (undocumented)
+	next
+
+movaix:	calcind(regix)				| DD7E MOV A,(IX+d)
+	lbzx rega,targbase,r0
+	next
+
+addxh:	lbz r3,regxh(regs)			| DD84 ADD XH (undocumented)
+	addflags
+	next
+
+addxl:	lbz r3,regxl(regs)			| DD85 ADD XL (undocumented)
+	addflags
+	next
+
+addix:	calcind(regix)				| DD86 ADD (IX+d)
+	lbzx r3,targbase,r0
+	addflags
+	next
+
+adcxh:	lbz r3,regxh(regs)			| DD8C ADC XH (undocumented)
+	adcflags
+	next
+
+adcxl:	lbz r3,regxl(regs)			| DD8E ADC XL (undocumented)
+	adcflags
+	next
+
+adcix:	calcind(regix)				| DD8E ADC (IX+d)
+	lbzx r3,targbase,r0
+	adcflags
+	next
+	
+subxh:	lbz r3,regxh(regs)			| DD94 SUB XH (undocumented)
+	subflags
+	next
+
+subxl:	lbz r3,regxl(regs)			| DD95 SUB XL (undocumented)
+	subflags
+	next
+
+subix:	calcind(regix)				| DD96 SUB (IX+d)
+	lbzx r3,targbase,r0
+	subflags
+	next
+
+sbbxh:	lbz r3,regxh(regs)	 		| DD9C SBB XH (undocumented)
+	sbbflags
+	next
+
+sbbxl:	lbz r3,regxl(regs)	 		| DD9D SBB XL (undocumented)
+	sbbflags
+	next
+
+sbbix:	calcind(regix)				| DD9E SBB (IX+d)
+	lbzx r3,targbase,r0
+	sbbflags
+	next
+
+anaxh:	lbz r3,regxh(regs)			| DDA4 ANA XH (undocumented)
+	and rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+anaxl:	lbz r3,regxl(regs)			| DDA5 ANA XL (undocumented)
+	and rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+anaix:	calcind(regix)				| DDA6 ANA (IX+d)
+	lbzx r3,targbase,r0
+	and rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+xraxh:	lbz r3,regxh(regs)			| DDAC XRA XH (undocumented)
+	xor rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+xraxl:	lbz r3,regxl(regs)			| DDAD XRA XL (undocumented)
+	xor rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+xraix:	calcind(regix)				| DDAE XRA (IX+d)
+	lbzx r3,targbase,r0
+	xor rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+oraxh:	lbz r3,regxh(regs)			| DDB4 ORA XH (undocumented)
+	or rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+oraxl:	lbz r3,regxl(regs)			| DDB5 ORA XL (undocumented)
+	or rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+oraix:	calcind(regix)				| DDB6 ORA (IX+d)
+	lbzx r3,targbase,r0
+	or rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+cmpxh:	lbz r3,regxh(regs)			| DDBC CMP XH (undocumented)
+	cmpflags
+	next
+
+cmpxl:	lbz r3,regxl(regs)			| DDBD CMP XL (undocumented)
+	cmpflags
+	next
+
+rlcix:	lbzx r3,targbase,r0			| DDCBdd06 RLC (IX+d)
+	RLCM(r3)
+	stbx r3,targbase,r0
+	setapflags(r3)
+	next
+
+rrcix:	lbzx r3,targbase,r0			| DDCBdd0E RRC (IX+d)
+	RRCM(r3)
+	stbx r3,targbase,r0
+	setapflags(r3)
+	next
+
+rlix:	lbzx r3,targbase,r0			| DDCBdd16 RL (IX+d)
+	RALM(r3)
+	andi. r3,r3,0xFF
+	stbx r3,targbase,r0
+	setapflags(r3)
+	next
+
+rrix:	lbzx r3,targbase,r0			| DDCBdd1E RR (IX+d)
+	RARM(r3)
+	stbx r3,targbase,r0
+	setapflags(r3)
+	next
+
+slaix:	lbzx r3,targbase,r0			| DDCBdd26 SLA (IX+d)
+	SLAM(r3)
+	stbx r3,targbase,r0
+	setapflags(r3)
+	next
+
+sraix:	lbzx r3,targbase,r0			| DDCBdd2E SRA (IX+d)
+	SRAM(r3)
+	stbx r3,targbase,r0
+	setapflags(r3)
+	next
+
+srlix:	lbzx r3,targbase,r0			| DDCBdd3E SRL (IX+d)
+	SRLM(r3)
+	stbx r3,targbase,r0
+	setapflags(r3)
+	next
+
+zset9:	ori regf,regf,0x40		| Used by BIT instructions.
+	next
+
+bit0ix:	lbzx r3,targbase,r0			| DDCBdd46 BIT 0,(IX+d)
+	andi. r3,r3,1
+	dozf(9)
+	next
+
+bit1ix:	lbzx r3,targbase,r0			| DDCBdd4E BIT 1,(IX+d)
+	andi. r3,r3,2
+	dozf(9)
+	next
+
+bit2ix:	lbzx r3,targbase,r0			| DDCBdd56 BIT 2,(IX+d)
+	andi. r3,r3,4
+	dozf(9)
+	next
+
+bit3ix:	lbzx r3,targbase,r0			| DDCBdd5E BIT 3,(IX+d)
+	andi. r3,r3,8
+	dozf(9)
+	next
+
+bit4ix:	lbzx r3,targbase,r0			| DDCBdd66 BIT 4,(IX+d)
+	andi. r3,r3,0x10
+	dozf(9)
+	next
+
+bit5ix:	lbzx r3,targbase,r0			| DDCBdd6E BIT 5,(IX+d)
+	andi. r3,r3,0x20
+	dozf(9)
+	next
+
+zset10:	ori regf,regf,0x40		| Used by BIT instructions.
+	next
+
+bit6ix:	lbzx r3,targbase,r0			| DDCBdd76 BIT 6,(IX+d)
+	andi. r3,r3,0x40
+	dozf(10)
+	next
+
+bit7ix:	lbzx r3,targbase,r0			| DDCBdd7E BIT 7,(IX+d)
+	andi. r3,r3,0x80
+	dozf(10)
+	next
+
+res0ix:	lbzx r3,targbase,r0			| DDCBdd86 RES 0,(IX+d)
+	andi. r3,r3,0xFE
+	stbx r3,targbase,r0
+	next
+
+res1ix:	lbzx r3,targbase,r0			| DDCBdd8E RES 1,(IX+d)
+	andi. r3,r3,0xFD
+	stbx r3,targbase,r0
+	next
+
+res2ix:	lbzx r3,targbase,r0			| DDCBdd96 RES 2,(IX+d)
+	andi. r3,r3,0xFB
+	stbx r3,targbase,r0
+	next
+
+res3ix:	lbzx r3,targbase,r0			| DDCBdd9E RES 3,(IX+d)
+	andi. r3,r3,0xF7
+	stbx r3,targbase,r0
+	next
+
+res4ix:	lbzx r3,targbase,r0			| DDCBddA6 RES 4,(IX+d)
+	andi. r3,r3,0xEF
+	stbx r3,targbase,r0
+	next
+
+res5ix:	lbzx r3,targbase,r0			| DDCBddAE RES 5,(IX+d)
+	andi. r3,r3,0xDF
+	stbx r3,targbase,r0
+	next
+
+res6ix:	lbzx r3,targbase,r0			| DDCBddB6 RES 6,(IX+d)
+	andi. r3,r3,0xBF
+	stbx r3,targbase,r0
+	next
+
+res7ix:	lbzx r3,targbase,r0			| DDCBddBE RES 7,(IX+d)
+	andi. r3,r3,0x7F
+	stbx r3,targbase,r0
+	next
+
+set0ix:	lbzx r3,targbase,r0			| DDCBddC6 SET 0,(IX+d)
+	ori r3,r3,1
+	stbx r3,targbase,r0
+	next
+
+set1ix:	lbzx r3,targbase,r0			| DDCBddCE SET 1,(IX+d)
+	ori r3,r3,2
+	stbx r3,targbase,r0
+	next
+
+set2ix:	lbzx r3,targbase,r0			| DDCBddD6 SET 2,(IX+d)
+	ori r3,r3,4
+	stbx r3,targbase,r0
+	next
+
+set3ix:	lbzx r3,targbase,r0			| DDCBddDE SET 3,(IX+d)
+	ori r3,r3,8
+	stbx r3,targbase,r0
+	next
+
+set4ix:	lbzx r3,targbase,r0			| DDCBddE6 SET 4,(IX+d)
+	ori r3,r3,0x10
+	stbx r3,targbase,r0
+	next
+
+set5ix:	lbzx r3,targbase,r0			| DDCBddEE SET 5,(IX+d)
+	ori r3,r3,0x20
+	stbx r3,targbase,r0
+	next
+
+set6ix:	lbzx r3,targbase,r0			| DDCBddF6 SET 6,(IX+d)
+	ori r3,r3,0x40
+	stbx r3,targbase,r0
+	next
+
+set7ix:	lbzx r3,targbase,r0			| DDCBddFE SET 7,(IX+d)
+	ori r3,r3,0x80
+	stbx r3,targbase,r0
+	next
+
+cmpix:	calcind(regix)				| DDBE CMP (IX+d)
+	lbzx r3,targbase,r0
+	cmpflags
+	next
+
+popix:	lbzux r3,pseudosp,regcon01		| DDE1 POP IX
+	stb r3,regxl(regs)
+	lbzux r3,pseudosp,regcon01
+	stb r3,regxh(regs)
+	next
+
+xtix:	lhz r0,regix(regs)			| DDE3 XTIX
+	lhbrx r3,regcon01,pseudosp
+	sthbrx r0,regcon01,pseudosp
+	sth r3,regix(regs)
+	next
+
+pushix:	lbz r3,regxh(regs)			| DDE5 PUSH IX
+	stb r3,0(pseudosp)
+	lbz r3,regxl(regs)
+	stbux r3,pseudosp,regconm1
+	add pseudosp,pseudosp,regconm1
+	next
+
+pcix:	lhz r3,regix(regs)			| DDE9 PCIX
+	add r3,r3,targbase
+	subf pseudopc,regcon01,r3
+	next
+
+spix:	lhz r3,regix(regs)			| DDF9 SPIX
+	add pseudosp,targbase,r3
+	add pseudosp,pseudosp,regconm1
+	next
+
+inbc:	lbz r0,regc(regs)			| ED40 IN B,(C)
+	addi r3,regs,regb
+	mflr ret1
+	bl inp
+	mtlr ret1
+	next
+
+outcb:	lbz r0,regc(regs)			| ED41 OUT (C),B
+	addi r3,regs,regb
+	mflr ret1
+	bl outp
+	mtlr ret1
+	next
+
+|_svf:	andc r0,r3,r4   |  s,  d
+|	andc r3,r4,r3   |  d,  s
+|	and r0,r0,r5    |  r
+|	andc r5,r3,r5   |  r
+|	or r3,r5,r0
+|	blr
+
+dsbbb:	lhz r0,regb(regs)			| ED42 DSBB B
+dsbbr0:	lhz r3,regh(regs)
+	andc r4,r0,r3		| SVF setup
+	andc r5,r3,r0		|  "
+	subf r3,r0,r3
+	and regf,regf,regcon01
+	subf r3,regf,r3
+	sth r3,regh(regs)	| Difference
+	rlwimi regf,r3,16,31,31	| Borrow
+	rlwimi regf,r3,24,24,24	| Sign
+	andi. r3,r3,0xFFFF	| Zero status?
+	and r4,r4,r3		| SVF calculation
+	andc r3,r5,r3		|  "
+	or r3,r3,r4		|  "
+	rlwimi regf,r3,19,29,29	| Overflow
+	ori regf,regf,2
+	bne+ dsbbb1
+	ori regf,regf,0x40	| Zero
+dsbbb1:	next
+
+sbcd:	getaddr2(pseudopc)			| ED43 SBCD addr
+	lhz r0,regb(regs)
+	sthbrx r0,targbase,r3
+	next
+
+nega:	andi. r3,rega,0xFF			| ED44 NEG
+	xori r3,r3,0xFF
+	li rega,1
+	addflags
+	next
+
+retn:	getaddr2(pseudosp)			| ED45 RETN (treated as RET)
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+	next
+
+im0:	next					| ED46 IM0 (set 8080 int mode)
+
+moveia:	stb rega,regi(regs)		 	| ED47 MOV I,A
+	next
+
+incc:	lbz r0,regc(regs)			| ED48 IN C,(C)
+	addi r3,regs,regc
+	mflr ret1
+	bl inp
+	mtlr ret1
+	next
+
+outcc:	lbz r0,regc(regs)			| ED49 OUT (C),C
+	addi r3,regs,regc
+	mflr ret1
+	bl outp
+	mtlr ret1
+	next
+
+|_avf:	nor r0,r3,r4    |  s,  d
+|	and r3,r3,r4    |  s,  d
+|	and r0,r0,r5    |  r
+|	andc r5,r3,r5   |  r
+|	or r3,r5,r0
+|	blr
+
+dadcb:	lhz r0,regb(regs)			| ED4A DADC B
+dadcr0:	lhz r3,regh(regs)
+	nor r4,r0,r3		| AVF setup
+	and r5,r3,r0		|  "
+	add r3,r3,r0
+	and regf,regf,regcon01
+	add r3,r3,regf
+	sth r3,regh(regs)	| Sum
+	rlwimi regf,r3,16,31,31	| Carry
+	rlwimi regf,r3,24,24,24 | Sign
+	andi. r3,r3,0xFFFF	| Zero status?
+	and r4,r4,r3		| AVF calculation
+	andc r3,r5,r3		|  "
+	or r3,r3,r4		|  "
+	rlwimi regf,r3,19,29,29	| Overflow
+	bne+ dadcb1
+	ori regf,regf,0x40	| Zero
+dadcb1:	next
+
+lbcd:	getaddr2(pseudopc)			| ED4B LBCD addr
+	lhbrx r0,targbase,r3
+	sth r0,regb(regs)
+	next
+
+reti:	getaddr2(pseudosp)			| ED4D RETI (treated as RET)
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+	next
+
+movera:	stb rega,regr(regs)			| ED4F MOV R,A
+	next
+
+indc:	lbz r0,regc(regs)			| ED50 IN D,(C)
+	addi r3,regs,regd
+	mflr ret1
+	bl inp
+	mtlr ret1
+	next
+
+outcd:	lbz r0,regc(regs)			| ED51 OUT (C),D
+	addi r3,regs,regd
+	mflr ret1
+	bl outp
+	mtlr ret1
+	next
+
+dsbbd:	lhz r0,regd(regs)			| ED52 DSBB D
+	b dsbbr0
+
+sded:	getaddr2(pseudopc)			| ED53 SDED addr
+	lhz r0,regd(regs)
+	sthbrx r0,targbase,r3
+	next
+
+im1:	next					| ED56 IM1 (ignored)
+
+moveai:	lbz rega,regi(regs)		 	| ED57 MOV A,I
+	lbzx r0,rega,aflagptr
+	rlwimi regf,r0,0,24,30
+	lbz r0,regiff(regs)
+	or regf,regf,r0
+	next
+
+inec:	lbz r0,regc(regs)			| ED58 IN E,(C)
+	addi r3,regs,rege
+	mflr ret1
+	bl inp
+	mtlr ret1
+	next
+
+outce:	lbz r0,regc(regs)			| ED59 OUT (C),E
+	addi r3,regs,rege
+	mflr ret1
+	bl outp
+	mtlr ret1
+	next
+
+dadcd:	lhz r0,regd(regs)			| ED5A DADC D
+	b dadcr0
+
+lded:	getaddr2(pseudopc)			| ED5B LDED addr
+	lhbrx r0,targbase,r3
+	sth r0,regd(regs)
+	next
+
+im2:	next					| ED5E IM2 (ignored)
+
+movear:	mflr ret1				| ED5F MOV A,R
+	bl randlp
+	mtlr ret1
+	rlwimi rega,r0,0,25,31
+	lbz r0,regr(regs)
+	rlwimi rega,r0,0,24,24
+	lbzx r0,rega,aflagptr
+	rlwimi regf,r0,0,24,30
+	lbz r0,regiff(regs)
+	or regf,regf,r0
+	next
+
+inhc:	lbz r0,regc(regs)			| ED60 IN H,(C)
+	addi r3,regs,regh
+	mflr ret1
+	bl inp
+	mtlr ret1
+	next
+
+outch:	lbz r0,regc(regs)			| ED61 OUT (C),H
+	addi r3,regs,regh
+	mflr ret1
+	bl outp
+	mtlr ret1
+	next
+
+dsbbh:	lhz r0,regh(regs)			| ED62 DSBB H
+	b dsbbr0
+	next
+
+rrd:	lhz r0,regh(regs)			| ED67 RRD
+	lbzx r3,targbase,r0
+	rlwimi r3,rega,8,16,23
+	rlwinm r3,r3,28,0,31	| Rotate right 4
+	stbx r3,targbase,r0
+	rlwimi rega,r3,4,28,31
+	andi. rega,rega,0xFF
+	lbzx r0,lflagptr,rega
+	rlwimi regf,r0,0,24,30
+	next
+
+inlc:	lbz r0,regc(regs)			| ED68 IN L,(C)
+	addi r3,regs,regl
+	mflr ret1
+	bl inp
+	mtlr ret1
+	next
+
+outcl:	lbz r0,regc(regs)			| ED69 OUT (C),L
+	addi r3,regs,regl
+	mflr ret1
+	bl outp
+	mtlr ret1
+	next
+
+dadch:	lhz r0,regh(regs)			| ED6A DADC H
+	b dadcr0
+
+rld:	lhz r0,regh(regs)			| ED6F RLD
+	lbzx r3,targbase,r0
+	rlwimi r3,rega,28,0,3
+	rlwinm r3,r3,4,0,31	| Rotate left 4
+	stbx r3,targbase,r0
+	rlwimi rega,r3,24,28,31
+	andi. rega,rega,0xFF
+	setapflags(rega)
+	next
+
+inmc:	lbz r0,regc(regs)			| ED70 IN M,(C)
+	lhz r3,regh(regs)
+	add r3,targbase,r3
+	mflr ret1
+	bl inp
+	mtlr ret1
+	next
+
+outcm:	lbz r0,regc(regs)			| ED71 OUT (C),M
+	lhz r3,regh(regs)
+	add r3,targbase,r3
+	mflr ret1
+	bl outp
+	mtlr ret1
+	next
+
+dsbbs:	subf r0,targbase,pseudosp		| ED72 DSBB SP
+	add r0,r0,regcon01
+	b dsbbr0
+
+sspd:	getaddr2(pseudopc)			| ED73 SSPD addr
+	subf r0,targbase,pseudosp
+	add r0,r0,regcon01
+	sthbrx r0,targbase,r3
+	next
+
+inac:	lbz r0,regc(regs)			| ED78 IN A,(C)
+	addi r3,regs,srega
+	mflr ret1
+	bl inp
+	mtlr ret1
+	lbz rega,srega(regs)
+	next
+
+outca:	lbz r0,regc(regs)			| ED79 OUT (C),A
+	stb rega,srega(regs)
+	addi r3,regs,srega
+	mflr ret1
+	bl outp
+	mtlr ret1
+	next
+
+dadcs:	subf r0,targbase,pseudosp		| ED7A DADC SP
+	add r0,r0,regcon01
+	b dadcr0
+
+lspd:	getaddr2(pseudopc)			| ED7B LSPD addr
+	lhbrx r0,targbase,r3
+	add pseudosp,targbase,r0
+	sub pseudosp,pseudosp,regcon01
+	next
+
+ldi:	lhz r0,regh(regs)			| EDA0 LDI
+	lhz r3,regd(regs)
+	lbzx r4,targbase,r0
+	stbx r4,targbase,r3
+	add r0,r0,regcon01
+	sth r0,regh(regs)
+	add r3,r3,regcon01
+	sth r3,regd(regs)
+	lhz r0,regb(regs)
+	add. r0,r0,regconm1
+	sth r0,regb(regs)
+	beq- ldi2
+	ori regf,regf,4
+	andi. regf,regf,0xED
+	next
+ldi2:	andi. regf,regf,0xE9
+	next
+
+cmpii:	lhz r0,regh(regs)			| EDA1 CMPI (Z-80 mnem. is CPI)
+	lbzx r3,targbase,r0
+	mr r4,regf
+	cmpflags
+	add r0,r0,regcon01
+	sth r0,regh(regs)
+	lhz r0,regb(regs)
+	add. r0,r0,regconm1
+	sth r0,regb(regs)
+	rlwimi regf,r3,0,31,31		| Restore CY
+	beq- cmpii2
+	ori regf,regf,4
+cmpii2:	next
+	andi. regf,regf,0xFB
+	next
+
+ini:	lbz r0,regc(regs)			| EDA2 INI
+	lhz r3,regh(regs)
+	add r3,r3,targbase
+	mflr ret1
+	bl inp
+	mtlr ret1
+	lhz r3,regh(regs)
+	add r3,r3,regcon01
+	sth r3,regh(regs)
+	lbz r3,regb(regs)
+	add. r3,r3,regconm1
+	stb r3,regb(regs)
+	ori regf,regf,0x2
+	beq- ini2
+	andi. regf,regf,0xBF
+	next
+ini2:	ori regf,regf,0x40
+	next
+
+outi:	lbz r0,regc(regs)			| EDA3 OUTI
+	lhz r3,regh(regs)
+	add r3,r3,targbase
+	mflr ret1
+	bl outp
+	mtlr ret1
+	lhz r3,regh(regs)
+	add r3,r3,regcon01
+	sth r3,regh(regs)
+	lbz r3,regb(regs)
+	add. r3,r3,regconm1
+	stb r3,regb(regs)
+	ori regf,regf,0x2
+	beq- outi2
+	andi. regf,regf,0xBF
+	next
+outi2:	ori regf,regf,0x40
+	next
+
+ldd:	lhz r0,regh(regs)			| EDA8 LDD
+	lhz r3,regd(regs)
+	lbzx r4,targbase,r0
+	stbx r4,targbase,r3
+	add r0,r0,regconm1
+	sth r0,regh(regs)
+	add r3,r3,regconm1
+	sth r3,regd(regs)
+	lhz r0,regb(regs)
+	add. r0,r0,regconm1
+	sth r0,regb(regs)
+	beq- ldd2
+	ori regf,regf,4
+	andi. regf,regf,0xED
+	next
+ldd2:	andi. regf,regf,0xE9
+	next
+
+cpd:	lhz r0,regh(regs)			| EDA9 CPD
+	lbzx r3,targbase,r0
+	mr r4,regf
+	cmpflags
+	add r0,r0,regconm1
+	sth r0,regh(regs)
+	lhz r0,regb(regs)
+	add. r0,r0,regconm1
+	sth r0,regb(regs)
+	rlwimi regf,r3,0,31,31		| Restore CY
+	beq- cpd2
+	ori regf,regf,4
+	next
+cpd2:	andi. regf,regf,0xFB
+	next
+
+ind:	lbz r0,regc(regs)			| EDAA IND
+	lhz r3,regh(regs)
+	add r3,r3,targbase
+	mflr ret1
+	bl inp
+	mtlr ret1
+	lhz r3,regh(regs)
+	add r3,r3,regconm1
+	sth r3,regh(regs)
+	lbz r3,regb(regs)
+	add. r3,r3,regconm1
+	stb r3,regb(regs)
+	ori regf,regf,0x2
+	beq- ind2
+	andi. regf,regf,0xBF
+	next
+ind2:	ori regf,regf,0x40
+	next
+
+outd:	lbz r0,regc(regs)			| EDAB OUTD
+	lhz r3,regh(regs)
+	add r3,r3,targbase
+	mflr ret1
+	bl outp
+	mtlr ret1
+	lhz r3,regh(regs)
+	add r3,r3,regconm1
+	sth r3,regh(regs)
+	lbz r3,regb(regs)
+	add. r3,r3,regconm1
+	stb r3,regb(regs)
+	ori regf,regf,0x2
+	beq- outd2
+	andi. regf,regf,0xBF
+	next
+outd2:	ori regf,regf,0x40
+	next
+
+ldir:	lhz r0,regb(regs)			| EDB0 LDIR
+	mtctr r0
+#  ifdef TRACE
+	mulli r0,r0,21
+	lwz r3,cycles(regs)
+	add r3,r3,r0
+	stw r3,cycles(regs)
+	mfctr r0
+#  endif
+	li r3,0				| Adjust Z-80 registers now.
+	sth r3,regb(regs)
+	lhz r3,regh(regs)		| Source
+	add r4,r3,r0
+	sth r4,regh(regs)
+	add r3,r3,targbase
+	add r3,r3,regconm1
+	lhz r4,regd(regs)		| Destination
+	add r0,r0,r4
+	sth r0,regd(regs)
+	add r4,r4,targbase
+	add r4,r4,regconm1
+	andi. regf,regf,0xC1
+ldir2:	lbzux r0,r3,regcon01
+	stbux r0,r4,regcon01
+	bdnz+ ldir2
+	next
+
+cpir:	lhz r3,regb(regs)			| EDB1 CPIR
+	mtctr r3
+	mr r0,regf
+	lhz r4,regh(regs)		| Source
+	add r4,r4,targbase
+	add r4,r4,regconm1
+cpir2:
+#  ifdef TRACE
+	lwz r3,cycles(regs)
+	addi r3,r3,21
+	stw r3,cycles(regs)
+#  endif
+	lbzux r3,r4,regcon01
+	cmpflags
+	andi. r3,regf,0x40
+	bne- cpir3			| Found.
+	bdnz cpir2
+	add r3,r4,regcon01		| Not found.
+	subf r3,targbase,r3
+	sth r3,regh(regs)
+	rlwimi regf,r0,0,31,31		| Restore CY
+	mfctr r3
+	sth r3,regb(regs)
+	andi. regf,regf,0xBB		| Not found, count expired.
+	next
+cpir3:	add r3,r4,regcon01		| Found.
+	subf r3,targbase,r3
+	sth r3,regh(regs)
+	rlwimi regf,r0,0,31,31		| Restore CY
+	mfctr r3
+	sub r3,r3,regcon01		| Account for successful compare cycle.
+	andi. r3,r3,0xFFFF
+	sth r3,regb(regs)
+	beq- cpir4
+	ori regf,regf,4			| Found, in the string.
+	next
+cpir4:	andi. regf,regf,0xFB		| Found, but at last place.
+	next
+
+inir:	lbz r0,regc(regs)			| EDB2 INIR
+#  ifdef TRACE
+	lwz r3,cycles(regs)
+	addi r3,r3,21
+	stw r3,cycles(regs)
+#  endif
+	lhz r3,regh(regs)
+	add r3,r3,targbase
+	mflr ret1
+	bl inp
+	mtlr ret1
+	subf r3,targbase,r3
+	add r3,r3,regcon01
+	sth r3,regh(regs)
+	lhz r3,regb(regs)
+	add. r3,r3,regconm1
+	sth r3,regb(regs)
+	bne+ inir
+	ori regf,regf,0x42
+	next
+
+otir:	lbz r0,regc(regs)			| EDB3 OTIR
+#  ifdef TRACE
+	lwz r3,cycles(regs)
+	addi r3,r3,21
+	stw r3,cycles(regs)
+#  endif
+	lhz r3,regh(regs)
+	add r3,r3,targbase
+	mflr ret1
+	bl outp
+	mtlr ret1
+	subf r3,targbase,r3
+	add r3,r3,regcon01
+	sth r3,regh(regs)
+	lhz r3,regb(regs)
+	add. r3,r3,regconm1
+	sth r3,regb(regs)
+	bne+ otir
+	ori regf,regf,0x42
+	next
+
+lddr:	lhz r0,regb(regs)			| EDB8 LDDR
+	mtctr r0
+#  ifdef TRACE
+	mulli r0,r0,21
+	lwz r3,cycles(regs)
+	add r3,r3,r0
+	stw r3,cycles(regs)
+	mfctr r0
+#  endif
+	li r3,0				| Adjust Z-80 registers now.
+	sth r3,regb(regs)
+	lhz r3,regh(regs)		| Source
+	sub r4,r3,r0
+	sth r4,regh(regs)
+	add r3,r3,targbase
+	add r3,r3,regcon01
+	lhz r4,regd(regs)		| Destination
+	sub r0,r4,r0
+	sth r0,regd(regs)
+	add r4,r4,targbase
+	add r4,r4,regcon01
+	andi. regf,regf,0xC1
+lddr2:	lbzux r0,r3,regconm1
+	stbux r0,r4,regconm1
+	bdnz+ lddr2
+	next
+
+cpdr:	lhz r3,regb(regs)			| EDB9 CPDR
+	mtctr r3
+	mr r0,regf
+	lhz r4,regh(regs)		| Source
+	add r4,r4,targbase
+	add r4,r4,regcon01
+cpdr2:
+#  ifdef TRACE
+	lwz r3,cycles(regs)
+	addi r3,r3,21
+	stw r3,cycles(regs)
+#  endif
+	lbzux r3,r4,regconm1
+	cmpflags
+	andi. r3,regf,0x40
+	bne- cpdr3			| Found.
+	bdnz cpdr2
+	subf r3,targbase,r4		| Not found.
+	sth r3,regh(regs)
+	rlwimi regf,r0,0,31,31		| Restore CY
+	mfctr r3
+	sth r3,regb(regs)
+	andi. regf,regf,0xBB		| Not found, count expired.
+	next
+cpdr3:	subf r3,targbase,r4		| Found.
+	sth r3,regh(regs)
+	rlwimi regf,r0,0,31,31		| Restore CY
+	mfctr r3
+	sub r3,r3,regcon01		| Account for successful compare cycle.
+	andi. r3,r3,0xFFFF
+	sth r3,regb(regs)
+	beq- cpdr4
+	ori regf,regf,4			| Found, in the string.
+	next
+cpdr4:	andi. regf,regf,0xFB		| Found, but at last place.
+	next
+
+indr:	lbz r0,regc(regs)			| EDBA INDR
+#  ifdef TRACE
+	lwz r3,cycles(regs)
+	addi r3,r3,21
+	stw r3,cycles(regs)
+#  endif
+	lhz r3,regh(regs)
+	add r3,r3,targbase
+	mflr ret1
+	bl inp
+	mtlr ret1
+	subf r3,targbase,r3
+	add r3,r3,regconm1
+	sth r3,regh(regs)
+	lhz r3,regb(regs)
+	add. r3,r3,regconm1
+	sth r3,regb(regs)
+	bne+ indr
+	ori regf,regf,0x42
+	next
+
+otdr:	lbz r0,regc(regs)			| EDBB OTDR
+#  ifdef TRACE
+	lwz r3,cycles(regs)
+	addi r3,r3,21
+	stw r3,cycles(regs)
+#  endif
+	lhz r3,regh(regs)
+	add r3,r3,targbase
+	mflr ret1
+	bl outp
+	mtlr ret1
+	subf r3,targbase,r3
+	add r3,r3,regconm1
+	sth r3,regh(regs)
+	lhz r3,regb(regs)
+	add. r3,r3,regconm1
+	sth r3,regb(regs)
+	bne+ otdr
+	ori regf,regf,0x42
+	next
+
+dadiyb:	lhz r0,regb(regs)			| FD09 DAD IY,B
+	lhz r3,regiy(regs)
+	add r3,r3,r0
+	sth r3,regiy(regs)
+	rlwimi regf,r3,16,30,31
+	next
+
+dadiyd:	lhz r0,regd(regs)			| FD19 DAD IY,D
+	lhz r3,regiy(regs)
+	add r3,r3,r0
+	sth r3,regiy(regs)
+	rlwimi regf,r3,16,30,31
+	next
+
+lxiiy:	lbzux r3,pseudopc,regcon01		| FD21 LXI IY,nnnn
+	stb r3,regyl(regs)
+	lbzux r3,pseudopc,regcon01
+	stb r3,regyh(regs)
+	next
+
+siyd:	getaddr2(pseudopc)			| FD22 SIYD addr
+	add r3,r3,targbase
+	lbz r0,regyl(regs)
+	stb r0,0(r3)
+	lbz r0,regyh(regs)
+	stb r0,1(r3)
+	next
+
+inxiy:	lhz r3,regiy(regs)			| FD23 INX IY
+	add r3,r3,regcon01
+	sth r3,regiy(regs)
+	next
+
+inryh:	lbz r3,regyh(regs)			| FD24 INR YH (undocumented)
+	inrflag(r3)
+	stb r3,regyh(regs)
+	next
+
+dcryh:	lbz r3,regyh(regs)			| FD25 DCR YH (undocumented)
+	dcrflag(r3)
+	stb r3,regyh(regs)
+	next
+
+mviyh:	lbzux r3,pseudopc,regcon01		| FD26 MVI YH,nn (undocumented)
+	stb r3,regyh(regs)
+	next
+
+dadiyy:	lhz r3,regiy(regs)			| FD29 DAD IY,IY (mult by 2)
+	add r3,r3,r3
+	sth r3,regiy(regs)
+	rlwimi regf,r3,16,30,31
+	next
+
+liyd:	getaddr2(pseudopc)			| FD2A LIYD addr
+	add r3,r3,targbase
+	lbz r0,0(r3)
+	stb r0,regyl(regs)
+	lbz r0,1(r3)
+	stb r0,regyh(regs)
+	next
+
+dcxiy:	lhz r3,regiy(regs)			| FD2B DCX IY
+	sub r3,r3,regcon01
+	sth r3,regiy(regs)
+	next
+
+inryl:	lbz r3,regyl(regs)			| FD2C INR YL (undocumented)
+	inrflag(r3)
+	stb r3,regyl(regs)
+	next
+
+dcryl:	lbz r3,regyl(regs)			| FD2D DCR YL (undocumented)
+	dcrflag(r3)
+	stb r3,regyl(regs)
+	next
+
+mviyl:	lbzux r3,pseudopc,regcon01		| FD2E MVI YL,nn (undocumented)
+	stb r3,regyl(regs)
+	next
+
+inriy:	calcind(regiy)				| FD34 INR (IY+d)
+	lbzx r3,targbase,r0
+	rlwimi r3,regcon01,8,16,23
+	lbzx r4,r3,aflagptr
+	rlwimi regf,r4,0,24,30
+	lbzx r3,r3,sumptr
+	stbx r3,targbase,r0
+	next
+
+dcriy:	calcind(regiy)				| FD35 DCR (IY+d)
+	lbzx r3,targbase,r0
+	rlwimi r3,regconm1,8,16,23
+	lbzx r4,r3,sflagptr
+	rlwimi regf,r4,0,24,30
+	lbzx r3,r3,sumptr
+	stbx r3,targbase,r0
+	next
+
+mviiy:	calcind(regiy)				| FD36 MVI (IY+d),nn
+	lbzux r3,pseudopc,regcon01
+	stbx r3,targbase,r0
+	next
+
+dadiys:	subf r0,targbase,pseudosp		| FD39 DAD IY,SP
+	add r0,r0,regcon01
+	lhz r3,regiy(regs)
+	add r3,r3,r0
+	sth r3,regiy(regs)
+	rlwimi regf,r3,16,30,31
+	next
+
+movbyh:	lbz r3,regyh(regs)			| FD44 MOV B,YH (undocumented)
+	stb r3,regb(regs)
+	next
+
+movbyl:	lbz r3,regyl(regs)			| FD45 MOV B,YL (undocumented)
+	stb r3,regb(regs)
+	next
+
+movbiy:	calcind(regiy)				| FD46 MOV B,(IY+d)
+	lbzx r3,targbase,r0
+	stb r3,regb(regs)
+	next
+
+movcyh:	lbz r3,regyh(regs)			| FD4C MOV C,YH (undocumented)
+	stb r3,regc(regs)
+	next
+
+movcyl:	lbz r3,regyl(regs)			| FD4D MOV C,YL (undocumented)
+	stb r3,regc(regs)
+	next
+
+movciy:	calcind(regiy)				| FD4E MOV C,(IY+d)
+	lbzx r3,targbase,r0
+	stb r3,regc(regs)
+	next
+
+movdyh:	lbz r3,regyh(regs)			| FD54 MOV D,YH (undocumented)
+	stb r3,regd(regs)
+	next
+
+movdyl:	lbz r3,regyl(regs)			| FD55 MOV D,YL (undocumented)
+	stb r3,regd(regs)
+	next
+
+movdiy:	calcind(regiy)				| FD56 MOV D,(IY+d)
+	lbzx r3,targbase,r0
+	stb r3,regd(regs)
+	next
+
+moveyh:	lbz r3,regyh(regs)			| FD5C MOV E,YH (undocumented)
+	stb r3,rege(regs)
+	next
+
+moveyl:	lbz r3,regyl(regs)			| FD5D MOV E,YL (undocumented)
+	stb r3,rege(regs)
+	next
+
+moveiy:	calcind(regiy)				| FD5E MOV E,(IY+d)
+	lbzx r3,targbase,r0
+	stb r3,rege(regs)
+	next
+
+movyhb:	lbz r3,regb(regs)			| FD60 MOV YH,B (undocumented)
+	stb r3,regyh(regs)
+	next
+
+movyhc:	lbz r3,regc(regs)			| FD61 MOV YH,C (undocumented)
+	stb r3,regyh(regs)
+	next
+
+movyhd:	lbz r3,regd(regs)			| FD62 MOV YH,D (undocumented)
+	stb r3,regyh(regs)
+	next
+
+movyhe:	lbz r3,rege(regs)			| FD63 MOV YH,E (undocumented)
+	stb r3,regyh(regs)
+	next
+
+mvyhyh:	next					| FD64 MOV YH,YH (undocumented)
+
+mvyhyl:	lbz r3,regyl(regs)			| FD65 MOV YH,YL (undocumented)
+	stb r3,regyh(regs)
+	next
+
+movhiy:	calcind(regiy)				| FD66 MOV H,(IY+d)
+	lbzx r3,targbase,r0
+	stb r3,regh(regs)
+	next
+
+movylb:	lbz r3,regb(regs)			| FD68 MOV YL,B (undocumented)
+	stb r3,regyl(regs)
+	next
+
+movylc:	lbz r3,regc(regs)			| FD69 MOV YL,C (undocumented)
+	stb r3,regyl(regs)
+	next
+
+movyld:	lbz r3,regd(regs)			| FD6A MOV YL,D (undocumented)
+	stb r3,regyl(regs)
+	next
+
+movyle:	lbz r3,rege(regs)			| FD6B MOV YL,E (undocumented)
+	stb r3,regyl(regs)
+	next
+
+mvylyh:	lbz r3,regyh(regs)			| FD6C MOV YL,YH (undocumented)
+	stb r3,regyl(regs)
+	next
+
+mvylyl:	next					| FD6D MOV YL,YL (undocumented)
+
+movliy:	calcind(regiy)				| FD6E MOV L,(IY+d)
+	lbzx r3,targbase,r0
+	stb r3,regl(regs)
+	next
+
+moviyb:	calcind(regiy)				| FD70 MOV (IY+d),B
+	lbz r3,regb(regs)
+	stbx r3,targbase,r0
+	next
+
+moviyc:	calcind(regiy)				| FD71 MOV (IY+d),C
+	lbz r3,regc(regs)
+	stbx r3,targbase,r0
+	next
+
+moviyd:	calcind(regiy)				| FD72 MOV (IY+d),D
+	lbz r3,regd(regs)
+	stbx r3,targbase,r0
+	next
+
+moviye:	calcind(regiy)				| FD73 MOV (IY+d),E
+	lbz r3,rege(regs)
+	stbx r3,targbase,r0
+	next
+
+moviyh:	calcind(regiy)				| FD74 MOV (IY+d),H
+	lbz r3,regh(regs)
+	stbx r3,targbase,r0
+	next
+
+moviyl:	calcind(regiy)				| FD75 MOV (IY+d),L
+	lbz r3,regl(regs)
+	stbx r3,targbase,r0
+	next
+
+moviya:	calcind(regiy)				| FD77 MOV (IY+d),A
+	stbx rega,targbase,r0
+	next
+
+movayh:	lbz rega,regyh(regs)			| FD7C MOV A,YH (undocumented)
+	next
+
+movayl:	lbz rega,regyl(regs)			| FD7D MOV A,YL (undocumented)
+	next
+
+movaiy:	calcind(regiy)				| FD7E MOV A,(IY+d)
+	lbzx rega,targbase,r0
+	next
+
+addyh:	lbz r3,regyh(regs)			| FD84 ADD YH (undocumented)
+	addflags
+	next
+
+addyl:	lbz r3,regyl(regs)			| FD85 ADD YL (undocumented)
+	addflags
+	next
+
+addiy:	calcind(regiy)				| FD86 ADD (IY+d)
+	lbzx r3,targbase,r0
+	addflags
+	next
+
+adcyh:	lbz r3,regyh(regs)			| FD8C ADC YH (undocumented)
+	adcflags
+	next
+
+adcyl:	lbz r3,regyl(regs)			| FD8E ADC YL (undocumented)
+	adcflags
+	next
+
+adciy:	calcind(regix)				| FD8E ADC (IY+d)
+	lbzx r3,targbase,r0
+	adcflags
+	next
+	
+subyh:	lbz r3,regyh(regs)			| FD94 SUB YH (undocumented)
+	subflags
+	next
+
+subyl:	lbz r3,regyl(regs)			| FD95 SUB YL (undocumented)
+	subflags
+	next
+
+subiy:	calcind(regiy)				| FD96 SUB (IY+d)
+	lbzx r3,targbase,r0
+	subflags
+	next
+
+sbbyh:	lbz r3,regyh(regs)	 		| FD9C SBB YH (undocumented)
+	sbbflags
+	next
+
+sbbyl:	lbz r3,regyl(regs)	 		| FD9D SBB YL (undocumented)
+	sbbflags
+	next
+
+sbbiy:	calcind(regiy)				| FD9E SBB (IY+d)
+	lbzx r3,targbase,r0
+	sbbflags
+	next
+
+anayh:	lbz r3,regyh(regs)			| FDA4 ANA YH (undocumented)
+	and rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+anayl:	lbz r3,regyl(regs)			| FDA5 ANA YL (undocumented)
+	and rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+anaiy:	calcind(regiy)				| FDA6 ANA (IY+d)
+	lbzx r3,targbase,r0
+	and rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+xrayh:	lbz r3,regyh(regs)			| FDAC XRA YH (undocumented)
+	xor rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+xrayl:	lbz r3,regyl(regs)			| FDAD XRA YL (undocumented)
+	xor rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+xraiy:	calcind(regiy)				| FDAE XRA (IY+d)
+	lbzx r3,targbase,r0
+	xor rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+orayh:	lbz r3,regyh(regs)			| FDB4 ORA YH (undocumented)
+	or rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+orayl:	lbz r3,regyl(regs)			| FDB5 ORA YL (undocumented)
+	or rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+oraiy:	calcind(regiy)				| FDB6 ORA (IY+d)
+	lbzx r3,targbase,r0
+	or rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+cmpyh:	lbz r3,regyh(regs)			| FDBC CMP YH (undocumented)
+	cmpflags
+	next
+
+cmpyl:	lbz r3,regyl(regs)			| FDBD CMP YL (undocumented)
+	cmpflags
+	next
+
+| FDCB-prefix instructions can use the DDCB-prefix routines
+| since the operand address is already in D0.
+
+cmpiy:	calcind(regiy)				| FDBE CMP (IY+d)
+	lbzx r3,targbase,r0
+	cmpflags
+	next
+
+popiy:	lbzux r3,pseudosp,regcon01		| FDE1 POP IY
+	stb r3,regyl(regs)
+	lbzux r3,pseudosp,regcon01
+	stb r3,regyh(regs)
+	next
+
+xtiy:	lhz r0,regiy(regs)			| FDE3 XTIY
+	lhbrx r3,regcon01,pseudosp
+	sthbrx r0,regcon01,pseudosp
+	sth r3,regiy(regs)
+	next
+
+pushiy:	lbz r3,regyh(regs)			| FDE5 PUSH IY
+	stb r3,0(pseudosp)
+	lbz r3,regyl(regs)
+	stbux r3,pseudosp,regconm1
+	add pseudosp,pseudosp,regconm1
+	next
+
+pciy:	lhz r3,regiy(regs)			| FDE9 PCIY
+	add r3,r3,targbase
+	subf pseudopc,regcon01,r3
+	next
+
+spiy:	lhz r3,regiy(regs)			| FDF9 SPIY
+	add pseudosp,targbase,r3
+	add pseudosp,pseudosp,regconm1
+	next
+
+|
+| 16-bit Linear Congruential Random # Generator from Knuth V2 3.2.1.1 (2).
+|
+| This generator is (supposedly) the version that repeats more often than
+| 65536, as it is modulo 65537 instead of 65536, but it has better distribution
+| of low-order bits (of which we are using 8 as our output value).  I was
+| unable to follow his mathematical proofs for deriving the optimal multiplier,
+| so I did a brute-force test starting with a seed of 1.  This found 535 to
+| be a good multiplier, which has a period of 40934.  There may be other
+| seeds that generate longer sequences with other multipliers, but there is
+| a limit to how much time I want to put into this.
+|
+| This kind of generator uses no addition step, and so will get stuck if
+| it ever gets a seed of 0.  It is of the form:
+|
+|	X1 = (aX0 + c) MOD (65537), where a is 535 and c is 0.
+|
+| To get the PPC code I cheated: I ran the C port of the original 68K
+| assembly code through the compiler and stole its output, suitably
+| modified for the environment.
+|
+randlp:	lhz r3,seed(regs)
+        neg r3,r3		| d0
+        extsh r3,r3		| d0, d0
+again:	mulli r0,r3,535		| d1, d0
+        srwi r3,r0,16		| d1
+        subf r3,r0,r3		| d0, d1
+        extsh. r0,r3		| d0, d0
+        bge- done
+        addi r0,r3,2		| d0, d0
+        extsh. r3,r0		| d0, d0
+        bgt+ again
+        addi r0,r3,-1		| d0, d0
+done:	sth r0,seed(regs)	| d0
+        blr
+
+|***********************************************************************|
+|									|
+|	Z-80 opcode dispatch table.  One longword entry per opcode	|
+|	of the target (Z-80) processor, including illegals.		|
+|									|
+|***********************************************************************|
+
+CBoptab:
+	entry rlcb,rlcc,rlcd,rlce,rlch,rlcl,rlcm,rlca 			| CB00
+	entry rrcb,rrcc,rrcd,rrce,rrch,rrcl,rrcm,rrca 			| CB08
+	entry rlrb,rlrc,rlrd,rlre,rlrh,rlrl,rlrm,rlra 			| CB10
+	entry rrrb,rrrc,rrrd,rrre,rrrh,rrrl,rrrm,rrra 			| CB18
+	entry slab,slac,slad,slae,slah,slal,slam,slaa 			| CB20
+	entry srab,srac,srad,srae,srah,sral,sram,sraa 			| CB28
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED	| CB30
+	entry srlb,srlc,srld,srle,srlh,srll,srlm,srla 			| CB38
+	entry bit0b,bit0c,bit0d,bit0e,bit0h,bit0l,bit0m,bit0a 		| CB40
+	entry bit1b,bit1c,bit1d,bit1e,bit1h,bit1l,bit1m,bit1a 		| CB48
+	entry bit2b,bit2c,bit2d,bit2e,bit2h,bit2l,bit2m,bit2a 		| CB50
+	entry bit3b,bit3c,bit3d,bit3e,bit3h,bit3l,bit3m,bit3a 		| CB58
+	entry bit4b,bit4c,bit4d,bit4e,bit4h,bit4l,bit4m,bit4a 		| CB60
+	entry bit5b,bit5c,bit5d,bit5e,bit5h,bit5l,bit5m,bit5a 		| CB68
+	entry bit6b,bit6c,bit6d,bit6e,bit6h,bit6l,bit6m,bit6a 		| CB70
+	entry bit7b,bit7c,bit7d,bit7e,bit7h,bit7l,bit7m,bit7a 		| CB78
+	entry res0b,res0c,res0d,res0e,res0h,res0l,res0m,res0a 		| CB80
+	entry res1b,res1c,res1d,res1e,res1h,res1l,res1m,res1a 		| CB88
+	entry res2b,res2c,res2d,res2e,res2h,res2l,res2m,res2a 		| CB90
+	entry res3b,res3c,res3d,res3e,res3h,res3l,res3m,res3a 		| CB98
+	entry res4b,res4c,res4d,res4e,res4h,res4l,res4m,res4a 		| CBA0
+	entry res5b,res5c,res5d,res5e,res5h,res5l,res5m,res5a 		| CBA8
+	entry res6b,res6c,res6d,res6e,res6h,res6l,res6m,res6a 		| CBB0
+	entry res7b,res7c,res7d,res7e,res7h,res7l,res7m,res7a 		| CBB8
+	entry set0b,set0c,set0d,set0e,set0h,set0l,set0m,set0a 		| CBC0
+	entry set1b,set1c,set1d,set1e,set1h,set1l,set1m,set1a 		| CBC8
+	entry set2b,set2c,set2d,set2e,set2h,set2l,set2m,set2a 		| CBD0
+	entry set3b,set3c,set3d,set3e,set3h,set3l,set3m,set3a 		| CBD8
+	entry set4b,set4c,set4d,set4e,set4h,set4l,set4m,set4a 		| CBE0
+	entry set5b,set5c,set5d,set5e,set5h,set5l,set5m,set5a 		| CBE8
+	entry set6b,set6c,set6d,set6e,set6h,set6l,set6m,set6a 		| CBF0
+	entry set7b,set7c,set7d,set7e,set7h,set7l,set7m,set7a 		| CBF8
+
+DDoptab:
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| DD00
+	entry illgED,dadixb,illgED,illgED,illgED,illgED,illgED,illgED 	| DD08
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| DD10
+	entry illgED,dadixd,illgED,illgED,illgED,illgED,illgED,illgED 	| DD18
+	entry illgED,lxiix,sixd,inxix,inrxh,dcrxh,mvixh,illgED		| DD20
+	entry illgED,dadixx,lixd,dcxix,inrxl,dcrxl,mvixl,illgED		| DD28
+	entry illgED,illgED,illgED,illgED,inrix,dcrix,mviix,illgED	| DD30
+	entry illgED,dadixs,illgED,illgED,illgED,illgED,illgED,illgED 	| DD38
+	entry illgED,illgED,illgED,illgED,movbxh,movbxl,movbix,illgED 	| DD40
+	entry illgED,illgED,illgED,illgED,movcxh,movcxl,movcix,illgED 	| DD48
+	entry illgED,illgED,illgED,illgED,movdxh,movdxl,movdix,illgED 	| DD50
+	entry illgED,illgED,illgED,illgED,movexh,movexl,moveix,illgED 	| DD58
+	entry movxhb,movxhc,movxhd,movxhe,mvxhxh,mvxhxl,movhix,movxha 	| DD60
+	entry movxlb,movxlc,movxld,movxle,mvxlxh,mvxlxl,movlix,movxla 	| DD68
+	entry movixb,movixc,movixd,movixe,movixh,movixl,illgED,movixa 	| DD70
+	entry illgED,illgED,illgED,illgED,movaxh,movaxl,movaix,illgED 	| DD78
+	entry illgED,illgED,illgED,illgED,addxh,addxl,addix,illgED	| DD80
+	entry illgED,illgED,illgED,illgED,adcxh,adcxl,adcix,illgED	| DD88
+	entry illgED,illgED,illgED,illgED,subxh,subxl,subix,illgED	| DD90
+	entry illgED,illgED,illgED,illgED,sbbxh,sbbxl,sbbix,illgED	| DD98
+	entry illgED,illgED,illgED,illgED,anaxh,anaxl,anaix,illgED	| DDA0
+	entry illgED,illgED,illgED,illgED,xraxh,xraxl,xraix,illgED	| DDA8
+	entry illgED,illgED,illgED,illgED,oraxh,oraxl,oraix,illgED	| DDB0
+	entry illgED,illgED,illgED,illgED,cmpxh,cmpxl,cmpix,illgED	| DDB8
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| DDC0
+	entry illgED,illgED,illgED,prDDCB,illgED,illgED,illgED,illgED 	| DDC8
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| DDD0
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| DDD8
+	entry illgED,popix,illgED,xtix,illgED,pushix,illgED,illgED	| DDE0
+	entry illgED,pcix,illgED,illgED,illgED,illgED,illgED,illgED	| DDE8
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| DDF0
+	entry illgED,spix,illgED,illgED,illgED,illgED,illgED,illgED	| DDF8
+
+DDCBopt:
+	entry rlcix,rrcix,rlix,rrix,slaix,sraix,ilDDCB,srlix 	      |DDCBdd06
+	entry bit0ix,bit1ix,bit2ix,bit3ix,bit4ix,bit5ix,bit6ix,bit7ix |DDCBdd46
+	entry res0ix,res1ix,res2ix,res3ix,res4ix,res5ix,res6ix,res7ix |DDCBdd86
+	entry set0ix,set1ix,set2ix,set3ix,set4ix,set5ix,set6ix,set7ix |DDCBddC6
+
+EDoptab:
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| ED00
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| ED08
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| ED10
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| ED18
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| ED20
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| ED28
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| ED30
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| ED38
+	entry inbc,outcb,dsbbb,sbcd,nega,retn,im0,moveia		| ED40
+	entry incc,outcc,dadcb,lbcd,illgED,reti,illgED,movera 		| ED48
+	entry indc,outcd,dsbbd,sded,illgED,illgED,im1,moveai		| ED50
+	entry inec,outce,dadcd,lded,illgED,illgED,im2,movear		| ED58
+	entry inhc,outch,dsbbh,illgED,illgED,illgED,illgED,rrd		| ED60
+	entry inlc,outcl,dadch,illgED,illgED,illgED,illgED,rld		| ED68
+	entry inmc,outcm,dsbbs,sspd,illgED,illgED,illgED,illgED		| ED70
+	entry inac,outca,dadcs,lspd,illgED,illgED,illgED,illgED		| ED78
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| ED80
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| ED88
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| ED90
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| ED98
+	entry ldi,cmpii,ini,outi,illgED,illgED,illgED,illgED		| EDA0
+	entry ldd,cpd,ind,outd,illgED,illgED,illgED,illgED		| EDA8
+	entry ldir,cpir,inir,otir,illgED,illgED,illgED,illgED 		| EDB0
+	entry lddr,cpdr,indr,otdr,illgED,illgED,illgED,illgED 		| EDB8
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| EDC0
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| EDC8
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| EDD0
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| EDD8
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| EDE0
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| EDE8
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| EDF0
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| EDF8
+
+FDoptab:
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| FD00
+	entry illgED,dadiyb,illgED,illgED,illgED,illgED,illgED,illgED 	| FD08
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| FD10
+	entry illgED,dadiyd,illgED,illgED,illgED,illgED,illgED,illgED 	| FD18
+	entry illgED,lxiiy,siyd,inxiy,inryh,dcryh,mviyh,illgED		| FD20
+	entry illgED,dadiyy,liyd,dcxiy,inryl,dcryl,mviyl,illgED		| FD28
+	entry illgED,illgED,illgED,illgED,inriy,dcriy,mviiy,illgED	| FD30
+	entry illgED,dadiys,illgED,illgED,illgED,illgED,illgED,illgED 	| FD38
+	entry illgED,illgED,illgED,illgED,movbyh,movbyl,movbiy,illgED 	| FD40
+	entry illgED,illgED,illgED,illgED,movcyh,movcyl,movciy,illgED 	| FD48
+	entry illgED,illgED,illgED,illgED,movdyh,movdyl,movdiy,illgED 	| FD50
+	entry illgED,illgED,illgED,illgED,moveyh,moveyl,moveiy,illgED 	| FD58
+	entry movyhb,movyhc,movyhd,movyhe,mvyhyh,mvyhyl,movhiy,illgED 	| FD60
+	entry movylb,movylc,movyld,movyle,mvylyh,mvylyl,movliy,illgED 	| FD68
+	entry moviyb,moviyc,moviyd,moviye,moviyh,moviyl,illgED,moviya 	| FD70
+	entry illgED,illgED,illgED,illgED,movayh,movayl,movaiy,illgED 	| FD78
+	entry illgED,illgED,illgED,illgED,addyh,addyl,addiy,illgED	| FD80
+	entry illgED,illgED,illgED,illgED,adcyh,adcyl,adciy,illgED	| FD88
+	entry illgED,illgED,illgED,illgED,subyh,subyl,subiy,illgED	| FD90
+	entry illgED,illgED,illgED,illgED,sbbyh,sbbyl,sbbiy,illgED	| FD98
+	entry illgED,illgED,illgED,illgED,anayh,anayl,anaiy,illgED	| FDA0
+	entry illgED,illgED,illgED,illgED,xrayh,xrayl,xraiy,illgED	| FDA8
+	entry illgED,illgED,illgED,illgED,orayh,orayl,oraiy,illgED	| FDB0
+	entry illgED,illgED,illgED,illgED,cmpyh,cmpyl,cmpiy,illgED	| FDB8
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| FDC0
+	entry illgED,illgED,illgED,prFDCB,illgED,illgED,illgED,illgED 	| FDC8
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| FDD0
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| FDD8
+	entry illgED,popiy,illgED,xtiy,illgED,pushiy,illgED,illgED	| FDE0
+	entry illgED,pciy,illgED,illgED,illgED,illgED,illgED,illgED	| FDE8
+	entry illgED,illgED,illgED,illgED,illgED,illgED,illgED,illgED 	| FDF0
+	entry illgED,spiy,illgED,illgED,illgED,illgED,illgED,illgED	| FDF8
+
+| FDCBopt is not necessary - DDCBopt can be used
+| since the operand address is in R0 for both routines.
+
+#endif
+	.end

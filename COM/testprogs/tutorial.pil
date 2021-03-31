@@ -1,0 +1,222 @@
+R:Morrow Designs Micro-Menu system - Rev 2.0
+R: Module - TUTORIAL.PIL
+R: Copyright 1982, 1983 Morrow Designs, Inc.
+R: All Rights Reserved
+R: Written by Harrison Schreppel for Morrow Designs
+R:
+ESC:*RETURN
+*BEGIN
+CLRS:
+T:                    {An Overview of CP/M}
+LF:1
+T:    This is the Micro Menus' on line CP/M tutorial. It is not meant
+T:to be a thorough presentation on using CP/M, but is  intended to be
+T:a "quick reference"  guide for people who  are just learning to use
+T:CP/M.  For  additional  information  or  variations  on any  of the
+T:commands shown, just enter the number corresponding to the command.
+T:{
+T:	1	Use of control keys in CP/M
+T:	2	DIR - Display a list of files on a diskette
+T:	3	ERA - Erase a file or series of files from a diskette
+T:	4	REN - Rename a file
+T:	5	STAT - Report system status
+T:	6	TYPE - Display a file on the screen
+T:	7	PIP - Move or copy files
+T:	8	SYSGEN - Put CP/M on a diskette
+T:	ESC	Return to Main Menu
+T:
+T:    Pick a subject:} 
+INMAX:1
+*ACTION
+CUR:20 ,18
+A:
+M: 1 , 2 , 3 , 4 , 5 , 6 , 7 , 8 ,
+Jn:*ACTION
+M: 1 ,
+JY:*CONTROL
+M: 2 ,
+JY:*DIR
+M: 3 ,
+JY:*ERA
+M: 4 ,
+JY:*REN
+M: 5 ,
+JY:*STAT
+M: 6 ,
+JY:*TYPE
+M: 7 ,
+JY:*PIP
+J:*SYSGEN
+
+*CONTROL
+R: definition of control keys
+CLRS:
+T: There are four control codes which  have special meaning in  CP/M. The
+T: control codes that are used by CP/M, and their meaning are as follows.
+T: 
+T:{CONTROL-C}- This is used in CP/M to  re-initialize the system. Anytime
+T: you change diskettes in a drive, you should type control-C so that the
+T: operating system will know that a diskette was changed.  
+T:
+T:{CONTROL-P}- This code is used to tell CP/M that  characters sent to the
+T: screen should also be sent to the printer.  This will remain  in effect
+T: until you press control-P a second time to turn off the routing  to the
+T: printer, or until you reset the system.
+T:
+T:{CONTROL-S}- This  is used to  pause or "freeze" the characters that are
+T: scrolling by on the screen.  Pressing any  other  character will resume
+T: output  (scrolling) to the screen.
+T:
+T:{CONTROL-X}- This will erase a command line that has been entered at the
+T: CP/M prompt " A> ."
+T:
+T: There are a few other control keys with  special meanings in  CP/M, but
+T: these should get you started.
+U:*PAUSE
+J:*BEGIN
+
+*DIR
+R: description of directory command
+CLRS:
+T:                        {The DIR Command}
+T:
+T:This command displays a list of all files on a diskette. It's format is:
+T:                            {DIR x:}
+T:Where x: is an optional drive designator (A:, B:, etc.). If no disk drive
+T:is specified, than CP/M will give you a listing of the files on the drive
+T:that is currently logged.
+T:
+T:{EXAMPLE} To get a listing of all the files on drive B, you would type:
+T:                            {DIR B:}
+T:
+U:*PAUSE
+J:*BEGIN
+
+*ERA
+R: description of the ERA command
+CLRS:
+T:                             {The ERA Command}
+T:
+T:This command is used to erase files from a diskette. The format is:
+T:                              {ERA FILENAME}
+T:Where FILENAME is any valid CP/M filename.  The filename may be prefixed
+T:by a drive designator (i.e. ERA B:FILENAME ).  If no designator is given
+T:then the currently logged drive will be used. 
+T:
+T:{EXAMPLE}  To  erase  a file called  "LETTER.TXT" from drive B, you would
+T:type:
+T:                            {ERA B:LETTER.TXT}
+T:
+U:*PAUSE
+J:*BEGIN
+
+*REN
+R: description of the REN command
+CLRS:
+T:                             {The REN Command}
+T:
+T:You may change the name that you have given to a file with the REN command.
+T:To use the REN command, you would type:
+T:                           {REN NEWNAME=OLDNAME}
+T:{EXAMPLE} To change the name of the file "LETTER.TXT" on drive B to the new
+T:name "MEMO.TXT," you would type:
+T:                       {REN B:MEMO.TXT=B:LETTER.TXT}
+T:
+U:*PAUSE
+J:*BEGIN
+
+*STAT
+R: description of the STAT command
+CLRS:
+T:                       {The STAT Command}
+T:
+T:This command may be used to report the size of a file, or the amount of space
+T:remaining on a diskette. Some examples of its usage are given below:
+T:
+T:	{STAT A:}         - Reports space remaining on drive A.
+T:	{STAT FILENAME}   - Reports the size of the file FILENAME.
+T:	{STAT B:FILENAME} - Reports the size of the file FILENAME on drive B.
+T:	{STAT C:*.*}      - Reports the size of all files on drive C.
+T:
+T:The  characters  *.* are called wildcards,  meaning that  they will match any
+T:character name.  There are  many forms of  wildcards,  all of which are fully 
+T:covered in the CP/M reference manual.
+T:
+U:*PAUSE
+J:*BEGIN
+
+*TYPE
+R: description of the TYPE command
+CLRS:
+T:                       {The TYPE Command}
+T:
+T:The TYPE command is used in CP/M to display a file on the screen.  To use the
+T:TYPE command, enter the following:
+T:                         {TYPE FILENAME}
+T:This will cause the file to be  sent to the screen of the terminal.  When the
+T:file is being displayed, you may press  CONTROL-S to stop the scrolling.  Any
+T:other character will then stop scrolling.  By preceding the TYPE command with
+T:a CONTROL-P, the output will also be sent to the printer.
+T:
+T:{EXAMPLE} To view a file called "LETTER.TXT" on drive B, enter:
+T:                       {TYPE B:LETTER.TXT}
+T:This command will only work to display text files.  Displaying non-text files
+T:such as files ending in "COM," may cause your terminal to do strange things.
+T:
+U:*PAUSE
+J:*BEGIN
+ 
+*PIP
+R: PIP and its uses
+CLRS:
+T:                        {The PIP Command}
+T:
+T:This command is used to move files around.  It can be used to move files from
+T:one diskette to another, from a diskette to the screen, or from a diskette to
+T:to the printer.  There are many variations of its use, but these are the main
+T:uses for it.  Some examples of its use follow:
+T:
+T:	{PIP B:=A:FILENAME} - Makes a duplicate copy on drive B, of the file
+T:			      "FILENAME" on drive A.
+T:
+T:	{PIP C:NEWNAME=B:FILENAME} - Makes a duplicate copy on drive C, of the
+T:				     file  "FILENAME"  on drive B,  calling it
+T:				     "NEWNAME" on drive C.
+T:
+T:	{PIP B:=A:*.*} - Copies all files from drive A to drive B.
+T:
+T:Your CP/M reference manual has more information on the PIP command, including
+T:the use of "wildcards" when copying files.
+T:
+U:*PAUSE
+J:*BEGIN
+
+*SYSGEN
+R: a description of SYSGEN
+CLRS:
+T:                      {The SYSGEN Command}
+T:
+T:This  command is used  to place a  copy of  CP/M in  its reserved  place on a
+T:diskette.  The use of  this command is fully explained in the  Micro Decision
+T:Users Guide.  Anytime you want to create a diskette that can be used in drive
+T:A of your Micro Decision,  you must use SYSGEN to place a copy of CP/M on the
+T:diskette first.  This is because the  CP/M operating system always expects to
+T:find a copy of itself on the diskette in drive A.
+T:
+U:*PAUSE
+J:*BEGIN
+
+==========================================================================
+
+*PAUSE
+CUR:0,23
+TNR: Press{RETURN}to continue
+INMAX:1
+A:
+E:
+
+*RETURN
+CLRS:
+T:{Returning to main menu, Please stand by...}
+CH:MICRO.PIL
+

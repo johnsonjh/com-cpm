@@ -1,0 +1,73 @@
+
+  This CP/M emulator is a major enhancement to the CP/M simulator written by
+Charlie Gibbs.  The simulator is part of disk number 109 of the Fred Fish
+library.
+
+  In all the years I've been in the computer game, software that runs on a
+given CPU and pretends it's some other CPU, has been referred to as an
+emulator.  Therefore, while the original author of this software referred to
+it as a simulator, I'm calling it an emulator.
+
+  The main reason I started to modify the emulator was to see if I could run
+the CP/M version of Turbo Pascal.  Many months later, this new version CAN
+run Turbo Pascal.  This feat(?) was accomplished by adding emulation logic
+for about 280 Z80 op codes.
+
+  How did I decide which ones to add, you might ask.  Why, by running Turbo
+Pascal under the emulator and adding logic for whatever op code the emulator
+said it couldn't handle.  Hell, if I'd known the Turbo Pascal used so many
+Z80 op codes, I'd never have started the project.
+
+  Yes, that means if you use the emulator to run a Z80 program, other than
+Turbo Pascal, you may discover a Z80 instruction that I didn't write code
+for.  I just took at the Mostek Z80 Technical Manual that I used as a
+reference text for this project; it looks as if there are about 60 or so
+op codes that I didn't write code for.
+
+  I also added code to handle a bunch of BDOS calls that Turbo Pascal needs.
+
+  Other things I didn't do:
+     1.  Update the mnemonic op code table used by the tracing version
+     2.  Correct the horrible mnemonics I inserted into the source code
+         before I got my hands on proper Z80 op code mnemonics
+
+  Finally, the names of people or companies whose work needs recognition:
+
+     1.  Charlie Gibbs, for his original simulator and for his excellent
+           68000 macro assembler
+
+     2.  Robert Freed, for his CP/M program that dissolves MS/DOS format
+           archives.  Not so much for the unARCing program, but for the
+           really outstanding assembly language source file, for that
+           program, that he made generally available
+
+     3.  CC Software (the proprietor's name escapes me), whose fascinating
+           source code generator allowed me to create a source file for my
+           copy of Turbo Pascal with minimum hassle
+
+     4.  Joan Riff, for her really excellent CP/M emulator for the MS/DOS
+           world
+
+  Without the source for Freed's unARCer and for Turbo Pascal, I would not
+have been able to find some of the bugs that cropped in the emulation logic
+that I added.
+
+  Oh yeah, the works of the people mentioned above are available for
+downloading from the bulletin board system mentioned below.
+
+  Now for the commercial:
+
+       KMMM Pascal BBS
+       (609) 232-0773
+       24 hours a day
+       7 days a week
+       300/1200/2400/9600 bps
+       9600 is USRobotics HST protocol
+       Passing a simple IQ test required for full access
+
+  This file created by:
+       Willi Kusche
+       SYSOP
+       KMMM Pascal BBS
+       July 2, 1988
+

@@ -1,0 +1,2024 @@
+|***********************************************************************|
+|									|
+|									|
+|	8080/Z-80 Simulator for PowerPC (Big-Endian)			|
+|									|
+|	Version 3.1 12/10/2008 JEC					|
+|		Ported 680x0 assembly to PPC assembly.			|
+|									|
+|	This program has been written for speed wherever possible,	|
+|	as such tends to be large because of the separate subroutine	|
+|	for each and every opcode of the target processor.  Note that	|
+|	the 'speedy' structure was optimal for a 680x0, whereas this	|
+|	is more of a port of that structure rather than something that	|
+|	was designed to be optimal for the PPC.	 This version uses	|
+|	large lookup tables for the target AF registers, which has	|
+|	cache implications.  No accounting for cache or pipeline	|
+|	behavior has been made.  Further optimization is no doubt	|
+|	possible.							|
+|									|
+|	It is not a perfect simulation, as some flag handling		|
+|	is not quite right, but it is enough to run the programs	|
+|	I wrote it for: DDT, LU, MAC, and the Morrow FORMATMW.		|
+|	Programs like WordStar 3.0 and MBASIC also work fine.		|
+|									|
+|***********************************************************************|
+
+|***********************************************************************|
+|									|
+|	This file contains the target processor (8080/Z-80) simulation	|
+|	routines.							|
+|									|
+|***********************************************************************|
+
+#include "ppcmacros.h"	/* Get NEXT code & declarations. */
+
+	.globl _service,_illegal,_stepper
+#ifdef Z80
+	.globl badop,CBoptab,DDoptab,EDoptab,FDoptab,DDCBopt
+#endif
+
+ 	.text
+|***********************************************************************|
+|									|
+|	Opcode simulation subroutines.					|
+|									|
+|***********************************************************************|
+
+nop00:	next					| 00 NOP
+
+lxib:	lbzux r3,pseudopc,regcon01		| 01 LXI B,nnnn
+	stb r3,regc(regs)
+	lbzux r3,pseudopc,regcon01
+	stb r3,regb(regs)
+	next
+
+staxb:	lhz r3,regb(regs)			| 02 STAX B
+	stbx rega,targbase,r3
+	next
+
+inxb:	lhz r3,regb(regs)			| 03 INX B
+	add r3,r3,regcon01
+	sth r3,regb(regs)
+	next
+
+inrb:	lbz r3,regb(regs)			| 04 INR B
+	inrflag(r3)
+	stb r3,regb(regs)
+	next
+
+dcrb:	lbz r3,regb(regs)			| 05 DCR B
+	dcrflag(r3)
+	stb r3,regb(regs)
+	next
+
+mvib:	lbzux r3,pseudopc,regcon01		| 06 MVI B,nn
+	stb r3,regb(regs)
+	next
+
+rlca:	RLCM(rega)				| 07 RLC
+#ifdef Z80
+	andi. regf,regf,0xE5
+#endif
+	next
+
+exaf:
+#ifdef Z80
+	mr r3,rega	 			| 08 EXAF (Z-80)
+	lbz rega,rega2(regs)
+	stb r3,rega2(regs)
+	mr r3,regf
+	lbz regf,regf2(regs)
+	stb r3,regf2(regs)
+	next
+#else
+	b badop					| 08 Illegal for 8080
+#endif
+
+dadb:	lhz r0,regb(regs)			| 09 DAD B
+	lhz r3,regh(regs)
+	add r3,r3,r0
+	sth r3,regh(regs)
+	rlwimi regf,r3,16,31,32
+	next
+
+
+ldaxb:	lhz r3,regb(regs)			| 0A LDAX B
+	lbzx rega,targbase,r3
+	next
+
+dcxb:	lhz r3,regb(regs)			| 0B DCX B
+	sub r3,r3,regcon01
+	sth r3,regb(regs)
+	next
+
+inrc:	lbz r3,regc(regs)			| 0C INR C
+	inrflag(r3)
+	stb r3,regc(regs)
+	next
+
+dcrc:
+#ifdef RUNOPTS
+	lbz r3,1(pseudopc)
+	cmpwi r3,0x20
+	bne+ dcrc1
+	lbz r3,2(pseudopc)
+	cmpwi r3,0xFD
+	bne+ dcrc1
+	lbz r3,regc(regs)
+	cmpwi r3,0
+	beq- dcrc1
+	stb regcon01,regc(regs)
+dcrc1:
+#endif
+	lbz r3,regc(regs)			| 0D DCR C
+	dcrflag(r3)
+	stb r3,regc(regs)
+	next
+
+mvic:	lbzux r3,pseudopc,regcon01		| 0E MVI C,nn
+	stb r3,regc(regs)
+	next
+
+rrca:	RRCM(rega)				| 0F RRC
+#ifdef Z80
+	andi. regf,regf,0xE5
+#endif
+	next
+
+djnz:
+#ifdef Z80
+	lbzux r0,pseudopc,regcon01		| 10 DJNZ dd (Z-80)
+	extsb r0,r0
+	lbz r3,regb(regs)
+	sub. r3,r3,regcon01
+	stb r3,regb(regs)
+	beq- djnzx
+	add pseudopc,pseudopc,r0
+djnzx:	next
+#else
+	b badop					| 10 Illegal for 8080
+#endif
+
+lxid:	lbzux r3,pseudopc,regcon01		| 11 LXI D,nnnn
+	stb r3,rege(regs)
+	lbzux r3,pseudopc,regcon01
+	stb r3,regd(regs)
+	next
+
+staxd:	lhz r3,regd(regs)			| 12 STAX D
+	stbx rega,targbase,r3
+	next
+
+inxd:	lhz r3,regd(regs)			| 13 INX D
+	add r3,r3,regcon01
+	sth r3,regd(regs)
+	next
+
+inrd:	lbz r3,regd(regs)			| 14 INR D
+	inrflag(r3)
+	stb r3,regd(regs)
+	next
+
+dcrd:	lbz r3,regd(regs)			| 15 DCR D
+	dcrflag(r3)
+	stb r3,regd(regs)
+	next
+
+mvid:	lbzux r3,pseudopc,regcon01		| 16 MVI D,nn
+	stb r3,regd(regs)
+	next
+
+ral:	RALM(rega)				| 17 RAL
+#ifdef Z80
+	andi. regf,regf,0xE5
+#endif
+	next
+
+jr:
+#ifdef Z80
+	lbzux r0,pseudopc,regcon01		| 18 JR dd (Z-80)
+	extsb r0,r0
+	add pseudopc,pseudopc,r0
+	next
+#else
+	b badop					| 18 Illegal for 8080
+#endif
+
+dadd:	lhz r0,regd(regs)			| 19 DAD D
+	lhz r3,regh(regs)
+	add r3,r3,r0
+	sth r3,regh(regs)
+	rlwimi regf,r3,16,31,32
+	next
+
+ldaxd:	lhz r3,regd(regs)			| 1A LDAX D
+	lbzx rega,targbase,r3
+	next
+
+dcxd:	lhz r3,regd(regs)			| 1B DCX D
+	sub r3,r3,regcon01
+	sth r3,regd(regs)
+	next
+
+inre:	lbz r3,rege(regs)			| 1C INR E
+	inrflag(r3)
+	stb r3,rege(regs)
+	next
+
+dcre:	lbz r3,rege(regs)			| 1D DCR E
+	dcrflag(r3)
+	stb r3,rege(regs)
+	next
+
+mvie:	lbzux r3,pseudopc,regcon01		| 1E MVI E,nn
+	stb r3,rege(regs)
+	next
+
+rar:	RARM(rega)				| 1F RAR
+#ifdef Z80
+	andi. regf,regf,0xE5
+#endif
+	next
+
+jrnz:
+#ifdef Z80
+	andi. r0,regf,0x40			| 20 JRNZ dd (Z-80)
+	lbzux r0,pseudopc,regcon01
+	extsb r0,r0
+	bne lxihx
+	add pseudopc,pseudopc,r0
+	next
+#else
+	b badop					| 20 Illegal for 8080
+#endif
+
+lxih:	lbzux r3,pseudopc,regcon01		| 21 LXI H,nnnn
+	stb r3,regl(regs)
+	lbzux r3,pseudopc,regcon01
+	stb r3,regh(regs)
+lxihx:	next
+
+shld:	getaddr2(pseudopc)			| 22 SHLD addr
+	lhz r0,regh(regs)
+	sthbrx r0,targbase,r3
+	next
+
+inxh:	lhz r3,regh(regs)			| 23 INX H
+	add r3,r3,regcon01
+	sth r3,regh(regs)
+	next
+
+inrh:	lbz r3,regh(regs)			| 24 INR H
+	inrflag(r3)
+	stb r3,regh(regs)
+	next
+
+dcrh:	lbz r3,regh(regs)			| 25 DCR H
+	dcrflag(r3)
+	stb r3,regh(regs)
+	next
+
+mvih:	lbzux r3,pseudopc,regcon01		| 26 MVI H,nn
+	stb r3,regh(regs)
+	next
+
+daa:	andi. r0,regf,1				| 27 DAA
+	li r3,0
+	bne fullcy
+	cmpwi rega,0x99
+	bgt fullcy
+	b nofull
+fullcy:	ori r3,r3,0x60
+nofull:	andi. r0,regf,0x10
+	bne halfcy
+	andi. r0,rega,0x0F
+	cmpwi r0,0x09
+	bgt halfcy
+	b nohalf
+halfcy:	ori r3,r3,0x06
+nohalf:	rlwimi r3,rega,8,16,23
+#ifdef Z80
+	andi. r0,regf,2
+	beq+ daap
+daan:	xori r3,r3,0xFF		| Negative DAA
+	oris r3,r3,1
+	lbzx regf,r3,aflagptr
+	lbzx rega,r3,sumptr
+	xor regf,regf,regcon01
+	lbzx r3,rega,lflagptr
+	rlwimi regf,r3,0,29,29
+	next
+daap:
+#endif
+	lbzx regf,r3,aflagptr	| Positive DAA
+	lbzx rega,r3,sumptr
+	lbzx r3,rega,lflagptr
+	rlwimi regf,r3,0,29,29
+	next
+
+jrz:
+#ifdef Z80
+	andi. r0,regf,0x40			| 28 JRZ dd (Z-80)
+	lbzux r0,pseudopc,regcon01
+	extsb r0,r0
+	beq dcxhx
+	add pseudopc,pseudopc,r0
+	next
+#else
+	b badop					| 28 Illegal for 8080
+#endif
+
+dadh:	lhz r3,regh(regs)			| 29 DAD H
+	add r3,r3,r3
+	sth r3,regh(regs)
+	rlwimi regf,r3,16,31,32
+	next
+
+lhld:	getaddr2(pseudopc)			| 2A LHLD addr
+	lhbrx r0,targbase,r3
+	sth r0,regh(regs)
+	next
+
+dcxh:	lhz r3,regh(regs)			| 2B DCX H
+	sub r3,r3,regcon01
+	sth r3,regh(regs)
+dcxhx:	next
+
+inrl:	lbz r3,regl(regs)			| 2C INR L
+	inrflag(r3)
+	stb r3,regl(regs)
+	next
+
+dcrl:	lbz r3,regl(regs)			| 2D DCR L
+	dcrflag(r3)
+	stb r3,regl(regs)
+	next
+
+mvil:	lbzux r3,pseudopc,regcon01		| 2E MVI L,nn
+	stb r3,regl(regs)
+	next
+
+cma:	xori rega,rega,0xFF			| 2F CMA
+#ifdef Z80
+	ori regf,regf,0x12
+#endif
+	next
+
+jrnc:
+#ifdef Z80
+	andi. r0,regf,1				| 30 JRNC dd (Z-80)
+	lbzux r0,pseudopc,regcon01
+	extsb r0,r0
+	bne lxisx
+	add pseudopc,pseudopc,r0
+	next
+#else
+	b badop					| 30 Illegal for 8080
+#endif
+
+lxis:	getaddr2(pseudopc)			| 31 LXI S,nnnn
+	add pseudosp,targbase,r3
+	add pseudosp,pseudosp,regconm1
+lxisx:	next
+
+sta:	getaddr2(pseudopc)			| 32 STA addr
+	stbx rega,targbase,r3
+	next
+
+inxs:	add pseudosp,pseudosp,regcon01		| 33 INX S
+	next
+
+inrm:	lhz r4,regh(regs)			| 34 INR M
+	lbzx r3,targbase,r4
+	inrflag(r3)
+	stbx r3,targbase,r4
+	next
+
+dcrm:	lhz r4,regh(regs)			| 35 DCR M
+	lbzx r3,targbase,r4
+	dcrflag(r3)
+	stbx r3,targbase,r4
+	next
+
+mvim:	lhz r0,regh(regs)			| 36 MVI M,nn
+	lbzux r3,pseudopc,regcon01
+	stbx r3,targbase,r0
+	next
+
+stc:	ori regf,regf,1				| 37 STC
+	next
+
+jrc:
+#ifdef Z80
+	andi. r0,regf,1				| 38 JRC dd (Z-80)
+	lbzux r0,pseudopc,regcon01
+	extsb r0,r0
+	beq lxisx
+	add pseudopc,pseudopc,r0
+	next
+#else
+	b badop					| 38 Illegal for 8080
+#endif
+
+dads:	subf r3,targbase,pseudosp		| 39 DAD S
+	add r3,r3,regcon01
+	lhz r0,regh(regs)
+	add r3,r3,r0
+	sth r3,regh(regs)
+	rlwimi regf,r3,16,31,32
+	next
+
+lda:	getaddr2(pseudopc)			| 3A LDA addr
+	lbzx rega,targbase,r3
+	next
+
+dcxs:	sub pseudosp,pseudosp,regcon01		| 3B DCX S
+	next
+
+inra:	inrflag(rega)				| 3C INR A
+	next
+
+dcra:	dcrflag(rega)				| 3D DCR A
+	next
+
+mvia:	lbzux rega,pseudopc,regcon01		| 3E MVI A,nn
+	next
+
+cmc:	xor regf,regf,regcon01			| 3F CMC
+	next
+
+movebb:	next					| 40 MOV B,B
+
+movebc:	lbz r3,regc(regs)			| 41 MOV B,C
+	stb r3,regb(regs)
+	next
+
+movebd:	lbz r3,regd(regs)			| 42 MOV B,D
+	stb r3,regb(regs)
+	next
+
+movebe:	lbz r3,rege(regs)			| 43 MOV B,E
+	stb r3,regb(regs)
+	next
+
+movebh:	lbz r3,regh(regs)			| 44 MOV B,H
+	stb r3,regb(regs)
+	next
+
+movebl:	lbz r3,regl(regs)			| 45 MOV B,L
+	stb r3,regb(regs)
+	next
+
+movebm:	lhz r3,regh(regs)			| 46 MOV B,M
+	lbzx r3,targbase,r3
+	stb r3,regb(regs)
+	next
+
+moveba:	stb rega,regb(regs)			| 47 MOV B,A
+	next
+
+movecb:	lbz r3,regb(regs)			| 48 MOV C,B
+	stb r3,regc(regs)
+	next
+
+movecc:	next					| 49 MOV C,C
+
+movecd:	lbz r3,regd(regs)			| 4A MOV C,D
+	stb r3,regc(regs)
+	next
+
+movece:	lbz r3,rege(regs)			| 4B MOV C,E
+	stb r3,regc(regs)
+	next
+
+movech:	lbz r3,regh(regs)			| 4C MOV C,H
+	stb r3,regc(regs)
+	next
+
+movecl:	lbz r3,regl(regs)			| 4D MOV C,L
+	stb r3,regc(regs)
+	next
+
+movecm:	lhz r3,regh(regs)			| 4E MOV C,M
+	lbzx r3,targbase,r3
+	stb r3,regc(regs)
+	next
+
+moveca:	stb rega,regc(regs)			| 4F MOV C,A
+	next
+
+movedb:	lbz r3,regb(regs)			| 50 MOV D,B
+	stb r3,regd(regs)
+	next
+
+movedc:	lbz r3,regc(regs)			| 51 MOV D,C
+	stb r3,regd(regs)
+	next
+
+movedd:	next					| 52 MOV D,D
+
+movede:	lbz r3,rege(regs)			| 53 MOV D,E
+	stb r3,regd(regs)
+	next
+
+movedh:	lbz r3,regh(regs)			| 54 MOV D,H
+	stb r3,regd(regs)
+	next
+
+movedl:	lbz r3,regl(regs)			| 55 MOV D,L
+	stb r3,regd(regs)
+	next
+
+movedm:	lhz r3,regh(regs)			| 56 MOV D,M
+	lbzx r3,targbase,r3
+	stb r3,regd(regs)
+	next
+
+moveda:	stb rega,regd(regs)			| 57 MOV D,A
+	next
+
+moveeb:	lbz r3,regb(regs)			| 58 MOV E,B
+	stb r3,rege(regs)
+	next
+
+moveec:	lbz r3,regc(regs)			| 59 MOV E,C
+	stb r3,rege(regs)
+	next
+
+moveed:	lbz r3,regd(regs)			| 5A MOV E,D
+	stb r3,rege(regs)
+	next
+
+moveee:	next					| 5B MOV E,E
+
+moveeh:	lbz r3,regh(regs)			| 5C MOV E,H
+	stb r3,rege(regs)
+	next
+
+moveel:	lbz r3,regl(regs)			| 5D MOV E,L
+	stb r3,rege(regs)
+	next
+
+moveem:	lhz r3,regh(regs)			| 5E MOV E,M
+	lbzx r3,targbase,r3
+	stb r3,rege(regs)
+	next
+
+moveea:	stb rega,rege(regs)			| 5F MOV E,A
+	next
+
+movehb:	lbz r3,regb(regs)			| 60 MOV H,B
+	stb r3,regh(regs)
+	next
+
+movehc:	lbz r3,regc(regs)			| 61 MOV H,C
+	stb r3,regh(regs)
+	next
+
+movehd:	lbz r3,regd(regs)			| 62 MOV H,D
+	stb r3,regh(regs)
+	next
+
+movehe:	lbz r3,rege(regs)			| 63 MOV H,E
+	stb r3,regh(regs)
+	next
+
+movehh:	next					| 64 MOV H,H
+
+movehl:	lbz r3,regl(regs)			| 65 MOV H,L
+	stb r3,regh(regs)
+	next
+
+movehm:	lhz r3,regh(regs)			| 66 MOV H,M
+	lbzx r3,targbase,r3
+	stb r3,regh(regs)
+	next
+
+moveha:	stb rega,regh(regs)			| 67 MOV H,A
+	next
+
+movelb:	lbz r3,regb(regs)			| 68 MOV L,B
+	stb r3,regl(regs)
+	next
+
+movelc:	lbz r3,regc(regs)			| 69 MOV L,C
+	stb r3,regl(regs)
+	next
+
+moveld:	lbz r3,regd(regs)			| 6A MOV L,D
+	stb r3,regl(regs)
+	next
+
+movele:	lbz r3,rege(regs)			| 6B MOV L,E
+	stb r3,regl(regs)
+	next
+
+movelh:	lbz r3,regh(regs)			| 6C MOV L,H
+	stb r3,regl(regs)
+	next
+
+movell:	next					| 6D MOV L,L
+
+movelm:	lhz r3,regh(regs)			| 6E MOV L,M
+	lbzx r3,targbase,r3
+	stb r3,regl(regs)
+	next
+
+movela:	stb rega,regl(regs)			| 6F MOV L,A
+	next
+
+movemb:	lhz r3,regh(regs)			| 70 MOV M,B
+	lbz r0,regb(regs)
+	stbx r0,targbase,r3
+	next
+
+movemc:	lhz r3,regh(regs)			| 71 MOV M,C
+	lbz r0,regc(regs)
+	stbx r0,targbase,r3
+	next
+
+movemd:	lhz r3,regh(regs)			| 72 MOV M,D
+	lbz r0,regd(regs)
+	stbx r0,targbase,r3
+	next
+
+moveme:	lhz r3,regh(regs)			| 73 MOV M,E
+	lbz r0,rege(regs)
+	stbx r0,targbase,r3
+	next
+
+movemh:	lhz r3,regh(regs)			| 74 MOV M,H
+	lbz r0,regh(regs)
+	stbx r0,targbase,r3
+	next
+
+movml:	lhz r3,regh(regs)			| 75 MOV M,L
+	lbz r0,regl(regs)
+	stbx r0,targbase,r3
+	next
+
+halt:	mflr ret1				| 76 HLT
+	bl srvc
+	mtlr ret1
+	next
+
+movema:	lhz r3,regh(regs)			| 77 MOV M,A
+	stbx rega,targbase,r3
+	next
+
+moveab:	lbz rega,regb(regs)			| 78 MOV A,B
+	next
+
+moveac:	lbz rega,regc(regs)			| 79 MOV A,C
+	next
+
+movead:	lbz rega,regd(regs)			| 7A MOV A,D
+	next
+
+moveae:	lbz rega,rege(regs)			| 7B MOV A,E
+	next
+
+moveah:	lbz rega,regh(regs)			| 7C MOV A,H
+	next
+
+moveal:	lbz rega,regl(regs)			| 7D MOV A,L
+	next
+
+moveam:	lhz r3,regh(regs)			| 7E MOV A,M
+	lbzx rega,targbase,r3
+	next
+
+moveaa:	next					| 7F MOV A,A
+
+addab:	lbz r3,regb(regs)			| 80 ADD B
+	addflags
+	next
+
+addc:	lbz r3,regc(regs)			| 81 ADD C
+	addflags
+	next
+
+addd:	lbz r3,regd(regs)			| 82 ADD D
+	addflags
+	next
+
+adde:	lbz r3,rege(regs)			| 83 ADD E
+	addflags
+	next
+
+addh:	lbz r3,regh(regs)			| 84 ADD H
+	addflags
+	next
+
+addal:	lbz r3,regl(regs)			| 85 ADD L
+	addflags
+	next
+
+addm:	lhz r0,regh(regs)			| 86 ADD M
+	lbzx r3,targbase,r0
+	addflags
+	next
+
+addaa:	andi. r3,rega,0xFF			| 87 ADD A
+	addflags
+	next
+
+adcb:	lbz r3,regb(regs)			| 88 ADC B
+	adcflags
+	next
+
+adcc:	lbz r3,regc(regs)			| 89 ADC C
+	adcflags
+	next
+
+adcd:	lbz r3,regd(regs)			| 8A ADC D
+	adcflags
+	next
+
+adce:	lbz r3,rege(regs)			| 8B ADC E
+	adcflags
+	next
+
+adch:	lbz r3,regh(regs)			| 8C ADC H
+	adcflags
+	next
+
+adcl:	lbz r3,regl(regs)			| 8D ADC L
+	adcflags
+	next
+
+adcm:	lhz r0,regh(regs)			| 8E ADC M
+	lbzx r3,targbase,r0
+	adcflags
+	next
+
+adca:	andi. r3,rega,0xFF			| 8F ADC A
+	adcflags
+	next
+
+subab:	lbz r3,regb(regs)			| 90 SUB B
+	subflags
+	next
+
+subc:	lbz r3,regc(regs)			| 91 SUB C
+	subflags
+	next
+
+subd:	lbz r3,regd(regs)			| 92 SUB D
+	subflags
+	next
+
+sube:	lbz r3,rege(regs)			| 93 SUB E
+	subflags
+	next
+
+subh:	lbz r3,regh(regs)			| 94 SUB H
+	subflags
+	next
+
+subal:	lbz r3,regl(regs)			| 95 SUB L
+	subflags
+	next
+
+subm:	lhz r0,regh(regs)			| 96 SUB M
+	lbzx r3,targbase,r0
+	subflags
+	next
+
+subaa:	andi. r3,rega,0xFF			| 97 SUB A
+	subflags
+	next
+
+sbbb:	lbz r3,regb(regs)			| 98 SBB B
+	sbbflags
+	next
+
+sbbc:	lbz r3,regc(regs)			| 99 SBB C
+	sbbflags
+	next
+
+sbbd:	lbz r3,regd(regs)			| 9A SBB D
+	sbbflags
+	next
+
+sbbe:	lbz r3,rege(regs)			| 9B SBB E
+	sbbflags
+	next
+
+sbbh:	lbz r3,regh(regs)			| 9C SBB H
+	sbbflags
+	next
+
+sbbl:	lbz r3,regl(regs)			| 9D SBB L
+	sbbflags
+	next
+
+sbbm:	lhz r0,regh(regs)			| 9E SBB M
+	lbzx r3,targbase,r0
+	sbbflags
+	next
+
+sbba:	andi. r3,rega,0xFF			| 9F SBB A
+	sbbflags
+	next
+
+anab:	lbz r3,regb(regs)			| A0 ANA B
+	and rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+andc:	lbz r3,regc(regs)			| A1 ANA C
+	and rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+andd:	lbz r3,regd(regs)			| A2 ANA D
+	and rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+ande:	lbz r3,rege(regs)			| A3 ANA E
+	and rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+andh:	lbz r3,regh(regs)			| A4 ANA H
+	and rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+anal:	lbz r3,regl(regs)			| A5 ANA L
+	and rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+andm:	lhz r3,regh(regs)			| A6 ANA M
+	lbzx r3,targbase,r3
+	and rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+anda:	lbzx regf,lflagptr,rega			| A7 ANA A
+	next
+
+xrab:	lbz r3,regb(regs)			| A8 XRA B
+	xor rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+xrac:	lbz r3,regc(regs)			| A9 XRA C
+	xor rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+xrad:	lbz r3,regd(regs)			| AA XRA D
+	xor rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+xrae:	lbz r3,rege(regs)			| AB XRA E
+	xor rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+xrah:	lbz r3,regh(regs)			| AC XRA H
+	xor rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+xral:	lbz r3,regl(regs)			| AD XRA L
+	xor rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+xram:	lhz r3,regh(regs)			| AE XRA M
+	lbzx r3,targbase,r3
+	xor rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+xraa:	xor rega,rega,rega			| AF XRA A
+	lbzx regf,lflagptr,rega
+	next
+
+orab:	lbz r3,regb(regs)			| B0 ORA B
+	or rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+orac:	lbz r3,regc(regs)			| B1 ORA C
+	or rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+orad:	lbz r3,regd(regs)			| B2 ORA D
+	or rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+orae:	lbz r3,rege(regs)			| B3 ORA E
+	or rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+orah:	lbz r3,regh(regs)			| B4 ORA H
+	or rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+oral:	lbz r3,regl(regs)			| B5 ORA L
+	or rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+oram:	lhz r3,regh(regs)			| B6 ORA M
+	lbzx r3,targbase,r3
+	or rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+oraa:	lbzx regf,lflagptr,rega			| B7 ORA A
+	next
+
+cmpab:	lbz r3,regb(regs)			| B8 CMP B
+	cmpflags
+	next
+
+cmpc:	lbz r3,regc(regs)			| B9 CMP C
+	cmpflags
+	next
+
+cmpd:	lbz r3,regd(regs)			| BA CMP D
+	cmpflags
+	next
+
+cmpe:	lbz r3,rege(regs)			| BB CMP E
+	cmpflags
+	next
+
+cmph:	lbz r3,regh(regs)			| BC CMP H
+	cmpflags
+	next
+
+cmpal:	lbz r3,regl(regs)			| BD CMP L
+	cmpflags
+	next
+
+cmpam:	lhz r3,regh(regs)			| BE CMP M
+	lbzx r3,targbase,r3
+	cmpflags
+	next
+
+cmpaa:	andi. r3,rega,0xFF			| BF CMP A
+	cmpflags
+	next
+
+rnz:	andi. r3,regf,0x40			| C0 RNZ
+	bne rnz2
+ret:	getaddr2(pseudosp)			| C9 RET
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+rnz2:	next
+
+
+popb:	lbzux r3,pseudosp,regcon01		| C1 POP B
+	stb r3,regc(regs)
+	lbzux r3,pseudosp,regcon01
+	stb r3,regb(regs)
+	next
+
+jnz:	andi. r0,regf,0x40			| C2 JNZ addr
+	getaddr2(pseudopc)
+	bne jnz2
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+jnz2:	next
+
+jmpa:	getaddr(pseudopc)			| C3 JMP addr
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+	next
+
+cnz:	andi. r0,regf,0x40			| C4 CNZ addr
+	getaddr2(pseudopc)
+	bne cnz2
+	add r0,pseudopc,regcon01
+	sub r0,r0,targbase
+	putaddr
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+cnz2:	next
+
+pushb:	lbz r3,regb(regs)			| C5 PUSH B
+	stb r3,0(pseudosp)
+	lbz r3,regc(regs)
+	stbux r3,pseudosp,regconm1
+	add pseudosp,pseudosp,regconm1
+	next
+
+adi:	lbzux r3,pseudopc,regcon01		| C6 ADI nn
+	addflags
+	next
+
+rst0:	add r0,pseudopc,regcon01		| C7 RST 0
+	sub r0,r0,targbase
+	putaddr
+	add pseudopc,targbase,regconm1
+	next
+
+rz:	andi. r3,regf,0x40			| C8 RZ
+	beq rz2
+	getaddr2(pseudosp)
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+rz2:	next
+
+jz:	andi. r0,regf,0x40			| CA JZ addr
+	getaddr2(pseudopc)
+	beq jz2
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+jz2:	next
+
+preCB:
+#ifdef Z80
+#  ifdef TRACE
+	lbzx r0,pseudopc,regcon01 | Tote up the cycles used.
+	addi r3,lflagptr,lo16(_cycletabl1-lflags)
+	lbzx r3,r3,r0
+	lwz r4,cycles(regs)
+	add r4,r4,r3
+	stw r4,cycles(regs)
+	lwz r3,opcntrs1(regs)
+	slwi r0,r0,2
+	lwzx r4,r3,r0	| Increment the right opcode counter.
+	add r4,r4,regcon01
+	stwx r4,r3,r0
+#  endif
+	addis r3,0,ha16(CBoptab)		| CB Prefix for BIT instrs.
+	la r3,lo16(CBoptab)(r3)
+	nextr3
+#else /* Not Z80 */
+	b badop					| CB Illegal for 8080
+#endif /* Z80 */
+
+cz:	andi. r0,regf,0x40			| CC CZ addr
+	getaddr2(pseudopc)
+	beq cz2
+	add r0,pseudopc,regcon01
+	sub r0,r0,targbase
+	putaddr
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+cz2:	next
+
+call:	getaddr2(pseudopc)			| CD CALL addr
+	add r0,pseudopc,regcon01
+	sub r0,r0,targbase
+	putaddr
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+	next
+
+aci:	lbzux r3,pseudopc,regcon01		| CE ACI nn
+	adcflags
+	next
+
+rst8:	add r0,pseudopc,regcon01		| CF RST 8
+	sub r0,r0,targbase
+	putaddr
+	addi pseudopc,targbase,7
+	next
+
+rnc:	andi. r3,regf,1				| D0 RNC
+	bne rnc2
+	getaddr2(pseudosp)
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+rnc2:	next
+
+popd:	lbzux r3,pseudosp,regcon01		| D1 POP D
+	stb r3,rege(regs)
+	lbzux r3,pseudosp,regcon01
+	stb r3,regd(regs)
+	next
+
+jnc:	andi. r0,regf,1				| D2 JNC addr
+	getaddr2(pseudopc)
+	bne jnc2
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+jnc2:	next
+
+out:	add pseudopc,pseudopc,regcon01		| D3 OUT nn
+	next
+
+cnc:	andi. r0,regf,1				| D4 CNC addr
+	getaddr2(pseudopc)
+	bne cnc2
+	add r0,pseudopc,regcon01
+	sub r0,r0,targbase
+	putaddr
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+cnc2:	next
+
+pushd:	lbz r3,regd(regs)			| D5 PUSH D
+	stb r3,0(pseudosp)
+	lbz r3,rege(regs)
+	stbux r3,pseudosp,regconm1
+	add pseudosp,pseudosp,regconm1
+	next
+
+sui:	lbzux r3,pseudopc,regcon01		| D6 SUI nn
+	subflags
+	next
+
+rst10:	add r0,pseudopc,regcon01		| D7 RST 10
+	sub r0,r0,targbase
+	putaddr
+	addi pseudopc,targbase,15
+	next
+
+rc:	andi. r3,regf,1				| D8 RC
+	beq rc2
+	getaddr2(pseudosp)
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+rc2:	next
+
+exx:
+#ifdef Z80
+	lhz r3,regb(regs)			| D9 EXX (Z-80)
+	lhz r0,regb2(regs)
+	sth r0,regb(regs)
+	sth r3,regb2(regs)
+	lwz r3,regd(regs)	| Gets HL too.
+	lwz r0,regd2(regs)
+	stw r0,regd(regs)
+	stw r3,regd2(regs)
+	next
+#else
+	b badop					| D9 Illegal for 8080
+#endif
+
+jc:	andi. r0,regf,1				| DA JC addr
+	getaddr2(pseudopc)
+	beq jc2
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+jc2:	next
+
+in:	add pseudopc,pseudopc,regcon01		| DB IN nn
+	next
+
+cc1:	andi. r0,regf,1				| DC CC addr
+	getaddr2(pseudopc)
+	beq cc2
+	add r0,pseudopc,regcon01
+	sub r0,r0,targbase
+	putaddr
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+cc2:	next
+
+preDD:
+#ifdef Z80
+#  ifdef TRACE
+	lbzx r0,pseudopc,regcon01 | Tote up the cycles used.
+	addi r3,lflagptr,lo16(_cycletabl2-lflags)
+	lbzx r3,r3,r0
+	lwz r4,cycles(regs)
+	add r4,r4,r3
+	stw r4,cycles(regs)
+	lwz r3,opcntrs2(regs)
+	slwi r0,r0,2
+	lwzx r4,r3,r0	| Increment the right opcode counter.
+	add r4,r4,regcon01
+	stwx r4,r3,r0
+#  endif
+	addis r3,0,ha16(DDoptab)		| DD Prefix for IX instrs
+	la r3,lo16(DDoptab)(r3)
+	nextr3
+#else /* Not Z80 */
+	b badop					| DD Illegal for 8080
+#endif /* Z80 */
+
+sbi:	lbzux r3,pseudopc,regcon01		| DE SBI nn
+	sbbflags
+	next
+
+rst18:	add r0,pseudopc,regcon01		| DF RST 18
+	sub r0,r0,targbase
+	putaddr
+	addi pseudopc,targbase,23
+	next
+
+rpo:	andi. r3,regf,4				| E0 RPO
+	bne rpo2
+	getaddr2(pseudosp)
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+rpo2:	next
+
+poph:	lbzux r3,pseudosp,regcon01		| E1 POP H
+	stb r3,regl(regs)
+	lbzux r3,pseudosp,regcon01
+	stb r3,regh(regs)
+	next
+
+jpo:	andi. r0,regf,4				| E2 JPO addr
+	getaddr2(pseudopc)
+	bne jpo2
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+jpo2:	next
+
+xthl:	lhz r0,regh(regs)			| E3 XTHL
+	lhbrx r3,regcon01,pseudosp
+	sthbrx r0,regcon01,pseudosp
+	sth r3,regh(regs)
+	next
+
+cpo:	andi. r0,regf,4				| E4 CPO addr
+	getaddr2(pseudopc)
+	bne cpo2
+	add r0,pseudopc,regcon01
+	sub r0,r0,targbase
+	putaddr
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+cpo2:	next
+
+
+pushh:	lbz r3,regh(regs)			| E5 PUSH H
+	stb r3,0(pseudosp)
+	lbz r3,regl(regs)
+	stbux r3,pseudosp,regconm1
+	add pseudosp,pseudosp,regconm1
+	next
+
+ani:	lbzux r3,pseudopc,regcon01		| E6 ANI nn
+	and rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+rst20:	add r0,pseudopc,regcon01		| E7 RST 20
+	sub r0,r0,targbase
+	putaddr
+	addi pseudopc,targbase,31
+	next
+
+rpe:	andi. r3,regf,4				| E8 RPE
+	beq rpe2
+	getaddr2(pseudosp)
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+rpe2:	next
+
+pchl:	lhz r3,regh(regs)			| E9 PCHL
+	add r3,r3,targbase
+	subf pseudopc,regcon01,r3
+	next
+
+jpe:	andi. r0,regf,4				| EA JPE addr
+	getaddr2(pseudopc)
+	beq jpe2
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+jpe2:	next
+
+xchg:	lhz r3,regd(regs)			| EB XCHG
+	lhz r0,regh(regs)
+	sth r0,regd(regs)
+	sth r3,regh(regs)
+	next
+
+cpe:	andi. r0,regf,4				| EC CPE addr
+	getaddr2(pseudopc)
+	beq cpe2
+	add r0,pseudopc,regcon01
+	sub r0,r0,targbase
+	putaddr
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+cpe2:	next
+
+preED:						| ED Prefix for misc instrs.
+#ifdef Z80
+#  ifdef TRACE
+	lbzx r0,pseudopc,regcon01 | Tote up the cycles used.
+	addi r3,lflagptr,lo16(_cycletabl3-lflags)
+	lbzx r3,r3,r0
+	lwz r4,cycles(regs)
+	add r4,r4,r3
+	stw r4,cycles(regs)
+	lwz r3,opcntrs3(regs)
+	slwi r0,r0,2
+	lwzx r4,r3,r0	| Increment the right opcode counter.
+	add r4,r4,regcon01
+	stwx r4,r3,r0
+#  endif
+	addis r3,0,ha16(EDoptab)
+	la r3,lo16(EDoptab)(r3)
+	nextr3
+#else /* Not Z80 */
+	b badop					| ED Illegal for 8080
+#endif /* Z80 */
+
+xri:	lbzux r3,pseudopc,regcon01		| EE XRI nn
+	xor rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+rst28:	add r0,pseudopc,regcon01		| EF RST 28
+	sub r0,r0,targbase
+	putaddr
+	addi pseudopc,targbase,39
+	next
+
+rp:	andi. r3,regf,0x80			| F0 RP
+	bne rp2
+	getaddr2(pseudosp)
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+rp2:	next
+
+popp:	lbzux regf,pseudosp,regcon01		| F1 POP P
+	lbzux rega,pseudosp,regcon01
+	next
+
+jp:	andi. r0,regf,0x80			| F2 JP addr
+	getaddr2(pseudopc)
+	bne jp2
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+jp2:	next
+
+di:						| F3 DI
+#ifdef Z80
+	li r3,0
+	stb r3,regiff(regs)
+#endif
+	next
+
+cp:	andi. r0,regf,0x80			| F4 CP addr
+	getaddr2(pseudopc)
+	bne cp2
+	add r0,pseudopc,regcon01
+	sub r0,r0,targbase
+	putaddr
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+cp2:	next
+
+pushp:	stb rega,0(pseudosp)			| F5 PUSH P
+	stbux regf,pseudosp,regconm1
+	add pseudosp,pseudosp,regconm1
+	next
+
+oria:	lbzux r3,pseudopc,regcon01		| F6 ORI nn
+	or rega,rega,r3
+	lbzx regf,lflagptr,rega
+	next
+
+rst30:	add r0,pseudopc,regcon01		| F7 RST 30
+	sub r0,r0,targbase
+	putaddr
+	addi pseudopc,targbase,47
+	next
+
+rm:	andi. r3,regf,0x80			| F8 RM
+	beq rm2
+	getaddr2(pseudosp)
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+rm2:	next
+
+sphl:	lhz r3,regh(regs)			| F9 SPHL
+	add pseudosp,targbase,r3
+	add pseudosp,pseudosp,regconm1
+	next
+
+jm:	andi. r0,regf,0x80			| FA JM addr
+	getaddr2(pseudopc)
+	beq jm2
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+jm2:	next
+
+ei:						| FB EI
+#ifdef Z80
+	li r3,4
+	stb r3,regiff(regs)
+#endif
+	next
+
+cm:	andi. r0,regf,0x80			| FC CM addr
+	getaddr2(pseudopc)
+	beq cm2
+	add r0,pseudopc,regcon01
+	sub r0,r0,targbase
+	putaddr
+	add pseudopc,targbase,r3
+	sub pseudopc,pseudopc,regcon01
+cm2:	next
+
+preFD:
+#ifdef Z80
+#  ifdef TRACE
+	lbzx r0,pseudopc,regcon01 | Tote up the cycles used.
+	addi r3,lflagptr,lo16(_cycletabl4-lflags)
+	lbzx r3,r3,r0
+	lwz r4,cycles(regs)
+	add r4,r4,r3
+	stw r4,cycles(regs)
+	lwz r3,opcntrs4(regs)
+	slwi r0,r0,2
+	lwzx r4,r3,r0	| Increment the right opcode counter.
+	add r4,r4,regcon01
+	stwx r4,r3,r0
+#  endif
+	addis r3,0,ha16(FDoptab)		| FD Prefix for IY instrs
+	la r3,lo16(FDoptab)(r3)
+	nextr3
+#else /* Not Z80 */
+	b badop					| FD Illegal for 8080
+#endif /* Z80 */
+
+cpi:	lbzux r3,pseudopc,regcon01		| FE CPI nn
+	cmpflags
+	next
+
+rst38:	add r0,pseudopc,regcon01		| FF RST 38
+	sub r0,r0,targbase
+	putaddr
+	addi pseudopc,targbase,55
+	next
+
+|***********************************************************************|
+|									|
+|	Initialization and Main Opcode dispatcher.			|
+|									|
+|***********************************************************************|
+
+#ifdef TRACE
+#  ifdef CONTEST
+	.globl _oopcodesimulator
+_oopcodesimulator:
+#  else
+	.globl _opcodesimulator
+_opcodesimulator:
+#  endif
+#else
+	.globl _opcodesimulator
+_opcodesimulator:
+#endif
+	mflr r0			| Save return address
+	stmw ret1,-15*04(r1)
+	stw r0,8(r1)
+	stwu r1,-96(r1)
+	bcl 20,31,anchor
+anchor:	mflr anchorreg
+
+	mr targbase,r3		| Start of target memory (TPA).
+	bl lodregs		| Load the remaining simulation registers.
+	bl mloop2
+	add r0,pseudopc,regcon01 | Make shadow registers valid.
+	bl filsh2
+
+	lwz r0,104(r1)
+	addi r1,r1,96
+	mtlr r0
+	lmw ret1,-15*04(r1)
+	blr
+
+|				| Execute simulation
+mloop:
+#ifdef TRACE
+#  ifdef CONTEST
+	blr
+#  else
+	lbz r0,badflag(regs)
+	andi. r0,r0,0xFF
+	bne- mloop2
+	lwz r0,pppctmp(regs)
+	stw r0,pppc(regs)
+#  endif
+#endif
+mloop2:
+#ifdef TRACE
+	add r0,pseudopc,regcon01
+	stw r0,pppctmp(regs)
+	lbz r0,trcflag(regs)	| Optional trace.
+	andi. r0,r0,0xFF
+	bne dotrace
+	lwz r0,trcbegin(regs)
+	sub r0,r0,regcon01
+	cmpw r0,pseudopc
+	bne notrace
+	li r0,1
+	stb r0,trcflag(regs)
+dotrace: mflr ret1
+	bl step
+	mtlr ret1
+	lwz r0,trcend(regs)
+	sub r0,r0,regcon01
+	cmpw r0,pseudopc
+	bne notrace
+	li r0,0
+	stb r0,trcflag(regs)
+notrace:
+	lbzx r0,pseudopc,regcon01 | Tote up the cycles used.
+	addi r3,lflagptr,lo16(_cycletabl-lflags)
+	lbzx r3,r3,r0
+	lwz r4,cycles(regs)
+	add r4,r4,r3
+	stw r4,cycles(regs)
+	lwz r3,opcntrs(regs)
+	slwi r0,r0,2
+	lwzx r4,r3,r0	| Increment the right opcode counter.
+	add r4,r4,regcon01
+	stwx r4,r3,r0
+#endif /* TRACE */
+
+	inext			| Execute the appropriate subroutine.
+
+|***********************************************************************|
+|									|
+|	Illegal instructions and Dumping.				|
+|									|
+|***********************************************************************|
+
+filshad: mr r0,pseudopc		| Make shadow registers valid.
+filsh2:	stw r0,ppc(targbase)
+	sub r0,r0,targbase
+	li r3,spchi
+	sthx r0,targbase,r3
+
+	add r0,pseudosp,regcon01
+	stw r0,psp(targbase)
+	sub r0,r0,targbase
+	li r3,ssphi
+	sthx r0,targbase,r3
+
+	stb rega,srega(targbase)
+	stb regf,sregf(targbase)
+	blr
+
+
+| Handle illegal instructions by printing a message, the 8080/Z-80 registers,
+| and exiting the simulation.
+
+badop:	mflr ret1		| Save return address from harm.
+	stb regcon01,badflag(targbase)
+	bl filshad
+	mr r3,targbase
+	bl _illegal		| Call the C guts spiller.
+	mtlr ret1
+	blr			| Return to that which called mloop.
+
+step:	add r0,pseudopc,regcon01 | Make shadow registers valid.
+	mflr ret2		| Save return address from harm.
+	bl filsh2
+	mr r3,targbase
+	bl _stepper		| Call the 8080/Z-80 stepper/state dumper.
+	mtlr ret2
+	blr
+
+|***********************************************************************|
+|									|
+|	Set up the processor registers used by the simulation.		|
+|									|
+|***********************************************************************|
+
+lodregs:
+	addis opptr,0,ha16(optabl) | Point base reg. to opcode dispatch table.
+	la opptr,lo16(optabl)(opptr)
+	addis aflagptr,0,ha16(aflags) | Flag conversion tables.
+	la aflagptr,lo16(aflags)(aflagptr)
+	addis sflagptr,0,ha16(sflags)
+	la sflagptr,lo16(sflags)(sflagptr)
+	addis lflagptr,0,ha16(lflags)
+	la lflagptr,lo16(lflags)(lflagptr)
+	addis sumptr,0,ha16(sums)
+	la sumptr,lo16(sums)(sumptr)
+	lwz pseudopc,ppc(targbase)	| Starting Pseudo-PC
+	addi pseudopc,pseudopc,-1	| (Stupid PowerPC!)
+	lwz pseudosp,psp(targbase)	| Starting Pseudo-SP
+	addi pseudosp,pseudosp,-1
+	li regcon01,1			| Set up quick constants.
+	li regconm1,-1
+	lbz rega,srega(targbase)	| Clear 8080/Z-80 accumulator.
+	lbz regf,sregf(targbase)
+	blr
+
+|***********************************************************************|
+|									|
+|	BIOS and BDOS service request handler.  Calls out to C.		|
+|									|
+|***********************************************************************|
+
+srvc:	mflr ret2		| Save return address from harm.
+	bl filshad		| Load up the shadow 'registers'.
+	mr r3,targbase
+	bl _service		| Call the C BDOS->Unix converter.
+	add pseudopc,pseudopc,regcon01	| Move past service opcode.
+	lbz rega,srega(targbase)	| Get the call results.
+	lbzx regf,lflagptr,rega
+	mtlr ret2
+	blr
+
+|***********************************************************************|
+|									|
+|	Opcode dispatch table.  One entry per opcode of the target 	|
+|	(8080) processor, including illegals.				|
+|									|
+|***********************************************************************|
+
+	.align 4
+optabl:	entry nop00,lxib,staxb,inxb,inrb,dcrb,mvib,rlca
+	entry exaf,dadb,ldaxb,dcxb,inrc,dcrc,mvic,rrca
+	entry djnz,lxid,staxd,inxd,inrd,dcrd,mvid,ral
+	entry jr,dadd,ldaxd,dcxd,inre,dcre,mvie,rar
+	entry jrnz,lxih,shld,inxh,inrh,dcrh,mvih,daa
+	entry jrz,dadh,lhld,dcxh,inrl,dcrl,mvil,cma
+	entry jrnc,lxis,sta,inxs,inrm,dcrm,mvim,stc
+	entry jrc,dads,lda,dcxs,inra,dcra,mvia,cmc
+	entry movebb,movebc,movebd,movebe,movebh,movebl,movebm,moveba
+	entry movecb,movecc,movecd,movece,movech,movecl,movecm,moveca
+	entry movedb,movedc,movedd,movede,movedh,movedl,movedm,moveda
+	entry moveeb,moveec,moveed,moveee,moveeh,moveel,moveem,moveea
+	entry movehb,movehc,movehd,movehe,movehh,movehl,movehm,moveha
+	entry movelb,movelc,moveld,movele,movelh,movell,movelm,movela
+	entry movemb,movemc,movemd,moveme,movemh,movml,halt,movema
+	entry moveab,moveac,movead,moveae,moveah,moveal,moveam,moveaa
+	entry addab,addc,addd,adde,addh,addal,addm,addaa
+	entry adcb,adcc,adcd,adce,adch,adcl,adcm,adca
+	entry subab,subc,subd,sube,subh,subal,subm,subaa
+	entry sbbb,sbbc,sbbd,sbbe,sbbh,sbbl,sbbm,sbba
+	entry anab,andc,andd,ande,andh,anal,andm,anda
+	entry xrab,xrac,xrad,xrae,xrah,xral,xram,xraa
+	entry orab,orac,orad,orae,orah,oral,oram,oraa
+	entry cmpab,cmpc,cmpd,cmpe,cmph,cmpal,cmpam,cmpaa
+	entry rnz,popb,jnz,jmpa,cnz,pushb,adi,rst0
+	entry rz,ret,jz,preCB,cz,call,aci,rst8
+	entry rnc,popd,jnc,out,cnc,pushd,sui,rst10
+	entry rc,exx,jc,in,cc1,preDD,sbi,rst18
+	entry rpo,poph,jpo,xthl,cpo,pushh,ani,rst20
+	entry rpe,pchl,jpe,xchg,cpe,preED,xri,rst28
+	entry rp,popp,jp,di,cp,pushp,oria,rst30
+	entry rm,sphl,jm,ei,cm,preFD,cpi,rst38
+
+	.eject
+#ifdef Z80
+	.globl prDDCB,prFDCB,illgED,ilDDCB,mloop
+prDDCB:
+#  ifdef TRACE
+	lbzx r0,pseudopc,regcon01 | Tote up the cycles used.
+	addi r3,lflagptr,lo16(_cycletabl5-lflags)
+	lbzx r3,r3,r0
+	lwz r4,cycles(regs)
+	add r4,r4,r3
+	stw r4,cycles(regs)
+	lwz r3,opcntrs5(regs)
+	slwi r0,r0,2
+	lwzx r4,r3,r0	| Increment the right opcode counter.
+	add r4,r4,regcon01
+	stwx r4,r3,r0
+#  endif
+	calcind(regix)			| Calculate operand address.
+pDDCBs:	lbzux r4,pseudopc,regcon01	| Sub-sub-opcode
+	andi. r3,r4,7
+	cmpwi r3,6			| Is it valid?
+	bne- ilDDCB	 		| No.
+	rlwinm r4,r4,31,24,29		| Kill low-order 3 bits, 32-bit disp.
+	addis r3,0,ha16(DDCBopt)
+	la r3,lo16(DDCBopt)(r3)
+	lwzx r3,r4,r3
+	mtctr r3
+	bctr
+
+prFDCB:
+#  ifdef TRACE
+	lbzx r0,pseudopc,regcon01 | Tote up the cycles used.
+	addi r3,lflagptr,lo16(_cycletabl6-lflags)
+	lbzx r3,r3,r0
+	lwz r4,cycles(regs)
+	add r4,r4,r3
+	stw r4,cycles(regs)
+	lwz r3,opcntrs6(regs)
+	slwi r0,r0,2
+	lwzx r4,r3,r0	| Increment the right opcode counter.
+	add r4,r4,regcon01
+	stwx r4,r3,r0
+#  endif
+	calcind(regiy)			| Calculate operand address.
+	b pDDCBs	 		| Now we can use DDCB routines.
+
+ilDDCB:	subi pseudopc,pseudopc,2 | Enter here for DDCB/FDCB prefix errors.
+
+#endif /* !Z80 */
+
+illgED:	add pseudopc,pseudopc,regconm1	| Fix pseudo-PC for ILLEGAL.
+	b badop
+
+	.eject
+|***********************************************************************|
+|									|
+|	Flag register lookup tables.					|
+|									|
+|***********************************************************************|
+
+| These are large tables giving the AF results from A+B+C.  The PPC's own
+| native flags are just too different from the 8080/Z-80, and inefficient
+| to get to and convert, whereas it has gobs of memory.
+
+#include "flags.s"
+
+lflags:	.byte 0x44,0x00,0x00,0x04,0x00,0x04,0x04,0x00	| Logical flags.
+	.byte 0x00,0x04,0x04,0x00,0x04,0x00,0x00,0x04
+	.byte 0x00,0x04,0x04,0x00,0x04,0x00,0x00,0x04
+	.byte 0x04,0x00,0x00,0x04,0x00,0x04,0x04,0x00
+	.byte 0x00,0x04,0x04,0x00,0x04,0x00,0x00,0x04
+	.byte 0x04,0x00,0x00,0x04,0x00,0x04,0x04,0x00
+	.byte 0x04,0x00,0x00,0x04,0x00,0x04,0x04,0x00
+	.byte 0x00,0x04,0x04,0x00,0x04,0x00,0x00,0x04
+	.byte 0x00,0x04,0x04,0x00,0x04,0x00,0x00,0x04
+	.byte 0x04,0x00,0x00,0x04,0x00,0x04,0x04,0x00
+	.byte 0x04,0x00,0x00,0x04,0x00,0x04,0x04,0x00
+	.byte 0x00,0x04,0x04,0x00,0x04,0x00,0x00,0x04
+	.byte 0x04,0x00,0x00,0x04,0x00,0x04,0x04,0x00
+	.byte 0x00,0x04,0x04,0x00,0x04,0x00,0x00,0x04
+	.byte 0x00,0x04,0x04,0x00,0x04,0x00,0x00,0x04
+	.byte 0x04,0x00,0x00,0x04,0x00,0x04,0x04,0x00
+	.byte 0x80,0x84,0x84,0x80,0x84,0x80,0x80,0x84
+	.byte 0x84,0x80,0x80,0x84,0x80,0x84,0x84,0x80
+	.byte 0x84,0x80,0x80,0x84,0x80,0x84,0x84,0x80
+	.byte 0x80,0x84,0x84,0x80,0x84,0x80,0x80,0x84
+	.byte 0x84,0x80,0x80,0x84,0x80,0x84,0x84,0x80
+	.byte 0x80,0x84,0x84,0x80,0x84,0x80,0x80,0x84
+	.byte 0x80,0x84,0x84,0x80,0x84,0x80,0x80,0x84
+	.byte 0x84,0x80,0x80,0x84,0x80,0x84,0x84,0x80
+	.byte 0x84,0x80,0x80,0x84,0x80,0x84,0x84,0x80
+	.byte 0x80,0x84,0x84,0x80,0x84,0x80,0x80,0x84
+	.byte 0x80,0x84,0x84,0x80,0x84,0x80,0x80,0x84
+	.byte 0x84,0x80,0x80,0x84,0x80,0x84,0x84,0x80
+	.byte 0x80,0x84,0x84,0x80,0x84,0x80,0x80,0x84
+	.byte 0x84,0x80,0x80,0x84,0x80,0x84,0x84,0x80
+	.byte 0x84,0x80,0x80,0x84,0x80,0x84,0x84,0x80
+	.byte 0x80,0x84,0x84,0x80,0x84,0x80,0x80,0x84
+
+#ifdef TRACE
+| Table of cycle counts per 8080 instruction.  For those with two different
+| times the times are averaged, unless (like DJNZ) you can assume that one
+| time is dominant.
+	.globl _cycletabl,_cycletabl1,_cycletabl2,_cycletabl3,_cycletabl4
+	.globl _cycletabl5,_cycletabl6
+_cycletabl:
+	.byte 4,10,7,6,4,4,7,4	| NOP,LXIB,STAXB,INXB,INRB,DCRB,MVIB,RLCA
+	.byte 4,11,7,6,4,4,7,4	| EXAF,DADB,LDAXB,DCXB,INRC,DCRC,MVIC,RRCA
+	.byte 13,10,7,6,4,4,7,4	| DJNZ,LXID,STAXD,INXD,INRD,DCRD,MVID,RAL
+	.byte 12,11,7,6,4,4,7,4	| JR,DADD,LDAXD,DCXD,INRE,DCRE,MVIE,RAR
+	.byte 9,10,16,6,4,4,7,4	| JRNZ,LXIH,SHLD,INXH,INRH,DCRH,MVIH,DAA
+	.byte 9,11,16,6,4,4,7,4	| JRZ,DADH,LHLD,DCXH,INRL,DCRL,MVIL,CMA
+	.byte 9,10,13,6,11,11,7,4 | JRNC,LXIS,STA,INXS,INRM,DCRM,MVIM,STC
+	.byte 9,11,13,6,4,4,7,4	| JRC,DADS,LDA,DCXS,INRA,DCRA,MVIA,CMC
+	.byte 4,4,4,4,4,4,7,4 | MOVBB,MOVBC,MOVBD,MOVBE,MOVBH,MOVBL,MOVBM,MOVBA
+	.byte 4,4,4,4,4,4,7,4 | MOVCB,MOVCC,MOVCD,MOVCE,MOVCH,MOVCL,MOVCM,MOVCA
+	.byte 4,4,4,4,4,4,7,4 | MOVDB,MOVDC,MOVDD,MOVDE,MOVDH,MOVDL,MOVDM,MOVDA
+	.byte 4,4,4,4,4,4,7,4 | MOVEB,MOVEC,MOVED,MOVEE,MOVEH,MOVEL,MOVEM,MOVEA
+	.byte 4,4,4,4,4,4,7,4 | MOVHB,MOVHC,MOVHD,MOVHE,MOVHH,MOVHL,MOVHM,MOVHA
+	.byte 4,4,4,4,4,4,7,4 | MOVLB,MOVLC,MOVLD,MOVLE,MOVLH,MOVLL,MOVLM,MOVLA
+	.byte 7,7,7,7,7,7,4,7 | MOVMB,MOVMC,MOVMD,MOVME,MOVMH,MOVML,HLT,MOVMA
+	.byte 4,4,4,4,4,4,7,4 | MOVAB,MOVAC,MOVAD,MOVAE,MOVAH,MOVAL,MOVAM,MOVAA
+	.byte 4,4,4,4,4,4,7,4	| ADDB,ADDC,ADDD,ADDE,ADDH,ADDL,ADDM,ADDA
+	.byte 4,4,4,4,4,4,7,4	| ADCB,ADCC,ADCD,ADCE,ADCH,ADCL,ADCM,ADCA
+	.byte 4,4,4,4,4,4,7,4	| SUBB,SUBC,SUBD,SUBE,SUBH,SUBL,SUBM,SUBA
+	.byte 4,4,4,4,4,4,7,4	| SBBB,SBBC,SBBD,SBBE,SBBH,SBBL,SBBM,SBBA
+	.byte 4,4,4,4,4,4,7,4	| ANDB,ANDC,ANDD,ANDE,ANDH,ANDL,ANDM,ANDA
+	.byte 4,4,4,4,4,4,7,4	| XRAB,XRAC,XRAD,XRAE,XRAH,XRAL,XRAM,XRAA
+	.byte 4,4,4,4,4,4,7,4	| ORAB,ORAC,ORAD,ORAE,ORAH,ORAL,ORAM,ORAA
+	.byte 4,4,4,4,4,4,7,4	| CMPB,CMPC,CMPD,CMPE,CMPH,CMPL,CMPM,CMPA
+	.byte 8,10,10,10,14,11,7,11 | RNZ,POPB,JNZ,JMP,CNZ,PUSHB,ADI,RST0
+	.byte 8,10,10,0,14,17,7,11 | RZ,RET,JZ,BIT,CZ,CALL,ACI,RST8
+	.byte 8,10,10,11,14,11,7,11 | RNC,POPD,JNC,OUT,CNC,PUSHD,SUI,RST10
+	.byte 8,4,10,11,14,0,7,11 | RC,EXX,JC,IN,CC,IX,SBI,RST18
+	.byte 8,10,10,19,14,11,7,11 | RPO,POPH,JPO,XTHL,CPO,PUSHH,ANI,RST20
+	.byte 8,4,10,4,14,0,7,11 | RPE,PCHL,JPE,XCHG,CPE,MISC,XRI,RST28
+	.byte 8,10,10,4,14,11,7,11 | RP,POPP,JP,DI,CP,PUSHP,ORI,RST30
+	.byte 8,6,10,4,14,0,7,11 | RM,SPHL,JM,EI,CM,IY,CPI,RST38
+
+| As above, for CBXX Z80 instructions.
+_cycletabl1:
+	.byte 8,8,8,8,8,8,15,8	| RLCB,RLCC,RLCD,RLCE,RLCH,RLCL,RLCM,RLCA
+	.byte 8,8,8,8,8,8,15,8	| RRCB,RRCC,RRCD,RRCE,RRCH,RRCL,RRCM,RRCA
+	.byte 8,8,8,8,8,8,15,8	| RLB,RLC,RLD,RLE,RLH,RLL,RLM,RLA
+	.byte 8,8,8,8,8,8,15,8	| RRB,RRC,RRD,RRE,RRH,RRL,RRM,RRA
+	.byte 8,8,8,8,8,8,15,8	| SLAB,SLAC,SLAD,SLAE,SLAH,SLAL,SLAM,SLAA
+	.byte 8,8,8,8,8,8,15,8	| SRAB,SRAC,SRAD,SRAE,SRAH,SRAL,SRAM,SRAA
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 8,8,8,8,8,8,15,8	| SRLB,SRLC,SRLD,SRLE,SRLH,SRLL,SRLM,SRLA
+	.byte 8,8,8,8,8,8,12,8 |BIT0B,BIT0C,BIT0D,BIT0E,BIT0H,BIT0L,BIT0M,BIT0A
+	.byte 8,8,8,8,8,8,12,8 |BIT1B,BIT1C,BIT1D,BIT1E,BIT1H,BIT1L,BIT1M,BIT1A
+	.byte 8,8,8,8,8,8,12,8 |BIT2B,BIT2C,BIT2D,BIT2E,BIT2H,BIT2L,BIT2M,BIT2A
+	.byte 8,8,8,8,8,8,12,8 |BIT3B,BIT3C,BIT3D,BIT3E,BIT3H,BIT3L,BIT3M,BIT3A
+	.byte 8,8,8,8,8,8,12,8 |BIT4B,BIT4C,BIT4D,BIT4E,BIT4H,BIT4L,BIT4M,BIT4A
+	.byte 8,8,8,8,8,8,12,8 |BIT5B,BIT5C,BIT5D,BIT5E,BIT5H,BIT5L,BIT5M,BIT5A
+	.byte 8,8,8,8,8,8,12,8 |BIT6B,BIT6C,BIT6D,BIT6E,BIT6H,BIT6L,BIT6M,BIT6A
+	.byte 8,8,8,8,8,8,12,8 |BIT7B,BIT7C,BIT7D,BIT7E,BIT7H,BIT7L,BIT7M,BIT7A
+	.byte 8,8,8,8,8,8,15,8 |RES0B,RES0C,RES0D,RES0E,RES0H,RES0L,RES0M,RES0A
+	.byte 8,8,8,8,8,8,15,8 |RES1B,RES1C,RES1D,RES1E,RES1H,RES1L,RES1M,RES1A
+	.byte 8,8,8,8,8,8,15,8 |RES2B,RES2C,RES2D,RES2E,RES2H,RES2L,RES2M,RES2A
+	.byte 8,8,8,8,8,8,15,8 |RES3B,RES3C,RES3D,RES3E,RES3H,RES3L,RES3M,RES3A
+	.byte 8,8,8,8,8,8,15,8 |RES4B,RES4C,RES4D,RES4E,RES4H,RES4L,RES4M,RES4A
+	.byte 8,8,8,8,8,8,15,8 |RES5B,RES5C,RES5D,RES5E,RES5H,RES5L,RES5M,RES5A
+	.byte 8,8,8,8,8,8,15,8 |RES6B,RES6C,RES6D,RES6E,RES6H,RES6L,RES6M,RES6A
+	.byte 8,8,8,8,8,8,15,8 |RES7B,RES7C,RES7D,RES7E,RES7H,RES7L,RES7M,RES7A
+	.byte 8,8,8,8,8,8,15,8 |SET0B,SET0C,SET0D,SET0E,SET0H,SET0L,SET0M,SET0A
+	.byte 8,8,8,8,8,8,15,8 |SET1B,SET1C,SET1D,SET1E,SET1H,SET1L,SET1M,SET1A
+	.byte 8,8,8,8,8,8,15,8 |SET2B,SET2C,SET2D,SET2E,SET2H,SET2L,SET2M,SET2A
+	.byte 8,8,8,8,8,8,15,8 |SET3B,SET3C,SET3D,SET3E,SET3H,SET3L,SET3M,SET3A
+	.byte 8,8,8,8,8,8,15,8 |SET4B,SET4C,SET4D,SET4E,SET4H,SET4L,SET4M,SET4A
+	.byte 8,8,8,8,8,8,15,8 |SET5B,SET5C,SET5D,SET5E,SET5H,SET5L,SET5M,SET5A
+	.byte 8,8,8,8,8,8,15,8 |SET6B,SET6C,SET6D,SET6E,SET6H,SET6L,SET6M,SET6A
+	.byte 8,8,8,8,8,8,15,8 |SET7B,SET7C,SET7D,SET7E,SET7H,SET7L,SET7M,SET7A
+
+| As above, for DDXX Z80 instructions.
+_cycletabl2:
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,15,0,0,0,0,0,0	| -,DADXB,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,15,0,0,0,0,0,0	| -,DADXD,-,-,-,-,-,-
+	.byte 0,14,20,10,9,9,9,0| -,LXIX,SIXD,INXX,INRXH,DCRXH,MVIXH,-
+	.byte 0,15,20,10,9,9,9,0| -,DADXX,LIXD,DCXX,INRXL,DCRXL,MVIXL,-
+	.byte 0,0,0,0,23,23,19,0| -,-,-,-,INRIX,DCRIX,MVIIX,-
+	.byte 0,15,0,0,0,0,0,0	| -,DADXS,-,-,-,-,-,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,MOVBXH,MOVBXL,MOVBIX,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,MOVCXH,MOVCXL,MOVCIX,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,MOVDXH,MOVDXL,MOVDIX,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,MOVEXH,MOVEXL,MOVEIX,-
+	.byte 9,9,9,9,9,9,19,9	| MOVXHB,MOVXHC,MOVXHD,MOVXHE,MOVXHXH,MOVXHXL,MOVXHIX,MOVXHA
+	.byte 9,9,9,9,9,9,19,9	| MOVXLB,MOVXLC,MOVXLD,MOVXLE,MOVXLXH,MOVLHXL,MOLXHIX,MLVXHA
+	.byte 19,19,19,19,19,19,0,19| MOVIXB,MOVIXC,MOVIXD,MOVIXE,MOVIXH,MOVIXL,-,MOVIXA
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,MOVAXH,MOVAXL,MOVAIX,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,ADDXH,ADDXL,ADDIX,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,ADCXH,ADCXL,ADCIX,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,SUBXH,SUBXL,SUBIX,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,SBCXH,SBCXL,SBCIX,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,ANAXH,ANAXL,ANAIX,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,XRAXH,XRAXL,XRAIX,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,ORAXH,ORAXL,ORAIX,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,CMPXH,CMPXL,CMPIX,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,PREDDCB,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,14,0,23,0,15,0,0| -,POPX,-,XTIX,-,PUSHX,-,-
+	.byte 0,8,0,0,0,0,0,0	| -,PCIX,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,10,0,0,0,0,0,0	|-,SPIX,-,-,-,-,-,-
+
+| As above, for EDXX Z80 instructions.
+_cycletabl3:
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 12,12,15,20,8,14,8,9| INBC,OUTCB,DSBBB,SBCD,NEG,RETN,IM0,MOVIA
+	.byte 12,12,15,20,0,14,0,9| INCC,OUTCC,DADCB,LBCD,-,RETI,-,MOVRA
+	.byte 12,12,15,20,0,0,8,9| INDC,OUTCD,DSBBD,SDED,-,-,IM1,MOVAI
+	.byte 12,12,15,20,0,0,8,9| INEC,OUTCE,DADCD,LDED,-,-,IM2,MOVAR
+	.byte 12,12,15,0,0,0,0,19| INHC,OUTCH,DSBBH,-,-,-,-,RRD
+	.byte 12,12,15,0,0,0,0,19| INLC,OUTCL,DADCH,-,-,-,-,RLD
+	.byte 12,12,15,20,0,0,0,0| INMC,OUTCM,DSBBS,SSPD,-,-,-,-
+	.byte 12,12,15,20,0,0,0,0| INAC,OUTCA,DADCS,LSPD,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 16,16,16,16,0,0,0,0| LDI,CPI,INI,OUTI,-,-,-,-
+	.byte 16,16,16,16,0,0,0,0| LDD,CPD,IND,OUTD,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| LDIR,CPIR,INIR,OTIR,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| LDDR,CPDR,INDR,OTDR,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+
+| As above, for FDXX Z80 instructions.
+_cycletabl4:
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,15,0,0,0,0,0,0	| -,DADYB,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,15,0,0,0,0,0,0	| -,DADYD,-,-,-,-,-,-
+	.byte 0,14,20,10,9,9,9,0| -,LXIY,SIYD,INXY,INRYH,DCRYH,MVIYH,-
+	.byte 0,15,20,10,9,9,9,0| -,DADYY,LIYD,DCXY,INRYL,DCRYL,MVIYL,-
+	.byte 0,0,0,0,23,23,19,0| -,-,-,-,INRIY,DCRIY,MVIIY,-
+	.byte 0,15,0,0,0,0,0,0	| -,DADYS,-,-,-,-,-,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,MOVBYH,MOVBYL,MOVBIY,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,MOVCYH,MOVCYL,MOVCIY,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,MOVDYH,MOVDYL,MOVDIY,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,MOVEYH,MOVEYL,MOVEIY,-
+	.byte 9,9,9,9,9,9,19,9	| MOVYHB,MOVYHC,MOVYHD,MOVYHE,MOVYHYH,MOVYHYL,MOVYHIY,MOVYHA
+	.byte 9,9,9,9,9,9,19,9	| MOVYLB,MOVYLC,MOVYLD,MOVYLE,MOVYLYH,MOVLHYL,MOLYHIY,MLVYHA
+	.byte 19,19,19,19,19,19,0,19| MOVIYB,MOVIYC,MOVIYD,MOVIYE,MOVIYH,MOVIYL,-,MOVIYA
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,MOVAYH,MOVAYL,MOVAIY,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,ADDYH,ADDYL,ADDIY,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,ADCYH,ADCYL,ADCIY,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,SUBYH,SUBYL,SUBIY,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,SBCYH,SBCYL,SBCIY,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,ANAYH,ANAYL,ANAIY,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,YRAYH,YRAYL,YRAIY,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,ORAYH,ORAYL,ORAIY,-
+	.byte 0,0,0,0,9,9,19,0	| -,-,-,-,CMPYH,CMPYL,CMPIY,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,PREDDCB,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,14,0,23,0,15,0,0| -,POPY,-,XTIY,-,PUSHY,-,-
+	.byte 0,8,0,0,0,0,0,0	| -,PCIY,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,10,0,0,0,0,0,0	| -,SPIY,-,-,-,-,-,-
+
+| As above, for DDCBddXX Z80 instructions.
+_cycletabl5:
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RLC (IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RRC (IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RL (IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RR (IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SLA (IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SRA (IX+dd),-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SRL (IX+dd),-
+	.byte 0,0,0,0,0,0,20,0	| -,-,-,-,-,-,BIT 0,(IX+dd),-
+	.byte 0,0,0,0,0,0,20,0	| -,-,-,-,-,-,BIT 1,(IX+dd),-
+	.byte 0,0,0,0,0,0,20,0	| -,-,-,-,-,-,BIT 2,(IX+dd),-
+	.byte 0,0,0,0,0,0,20,0	| -,-,-,-,-,-,BIT 3,(IX+dd),-
+	.byte 0,0,0,0,0,0,20,0	| -,-,-,-,-,-,BIT 4,(IX+dd),-
+	.byte 0,0,0,0,0,0,20,0	| -,-,-,-,-,-,BIT 5,(IX+dd),-
+	.byte 0,0,0,0,0,0,20,0	| -,-,-,-,-,-,BIT 6,(IX+dd),-
+	.byte 0,0,0,0,0,0,20,0	| -,-,-,-,-,-,BIT 7,(IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RES 0,(IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RES 1,(IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RES 2,(IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RES 3,(IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RES 4,(IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RES 5,(IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RES 6,(IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RES 7,(IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SET 0,(IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SET 1,(IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SET 2,(IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SET 3,(IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SET 4,(IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SET 5,(IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SET 6,(IX+dd),-
+	.byte 0,0,0,0,0,0,23,0	|-,-,-,-,-,-,SET 7,(IX+dd),-
+
+| As above, for FDCBddXX Z80 instructions.
+_cycletabl6:
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RLC (IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RRC (IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RL (IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RR (IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SLA (IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SRA (IY+dd),-
+	.byte 0,0,0,0,0,0,0,0	| -,-,-,-,-,-,-,-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SRL (IY+dd),-
+	.byte 0,0,0,0,0,0,20,0	| -,-,-,-,-,-,BIT 0,(IY+dd),-
+	.byte 0,0,0,0,0,0,20,0	| -,-,-,-,-,-,BIT 1,(IY+dd),-
+	.byte 0,0,0,0,0,0,20,0	| -,-,-,-,-,-,BIT 2,(IY+dd),-
+	.byte 0,0,0,0,0,0,20,0	| -,-,-,-,-,-,BIT 3,(IY+dd),-
+	.byte 0,0,0,0,0,0,20,0	| -,-,-,-,-,-,BIT 4,(IY+dd),-
+	.byte 0,0,0,0,0,0,20,0	| -,-,-,-,-,-,BIT 5,(IY+dd),-
+	.byte 0,0,0,0,0,0,20,0	| -,-,-,-,-,-,BIT 6,(IY+dd),-
+	.byte 0,0,0,0,0,0,20,0	| -,-,-,-,-,-,BIT 7,(IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RES 0,(IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RES 1,(IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RES 2,(IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RES 3,(IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RES 4,(IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RES 5,(IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RES 6,(IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,RES 7,(IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SET 0,(IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SET 1,(IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SET 2,(IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SET 3,(IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SET 4,(IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SET 5,(IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SET 6,(IY+dd),-
+	.byte 0,0,0,0,0,0,23,0	| -,-,-,-,-,-,SET 7,(IY+dd),-
+#endif
+
+	.end

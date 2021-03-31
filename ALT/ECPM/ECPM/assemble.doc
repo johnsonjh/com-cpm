@@ -1,0 +1,51 @@
+
+  The command file named 'alecpm' is used to assemble and link the CP/M
+emulator.  The command file named 'alecpmt' is used to assemble and link a
+version of the emulator that is capable of tracing individual instructions.
+
+  Both of these command files assume that you already have a copy of the
+following three files:
+    1. A68k      - macro assembler by Charlie Gibbs
+    2. Blink     - linker by the Software Distillery
+    3. Small.lib - pint sized version of amiga.lib
+
+  All of the above files are available on Fred Fish disks.  The numbers are
+as follows:
+
+    Name         FF disk number
+    ----         --------------
+    A68k              110
+    Blink              40
+    Small.lib          92
+
+  The above files are also available for downloading from the KMMM Pascal
+BBS.  Your local Amiga BBS may also have them.
+
+  The command file 'alecpm' expects a single digit parameter.  For example,
+to create a new version of the emulator after altering part 1 of the
+assembly language source file, you would enter the CLI command
+'EXECUTE ALECPM 1'.  Enter 'EXECUTE ALECPM 2' after altering part 2 of the
+source.  Before running either variant of the above commnads for the first
+time, enter 'a68k ecpm1.asm' and 'a68k ecpm2.asm' to be sure that both
+object files needed by the link step are present.
+
+  The command file 'alecpm' also includes a step to delete the tracing
+version of the emulator, since altering either part of the source file will
+cause the tracing version to become outdated.
+
+  Now for the commercial:
+
+       KMMM Pascal BBS
+       (609) 232-0773
+       24 hours a day
+       7 days a week
+       300/1200/2400/9600 bps
+       9600 is USRobotics HST protocol
+       Passing a simple IQ test required for full access
+
+  This file created by:
+       Willi Kusche
+       SYSOP
+       KMMM Pascal BBS
+       July 2, 1988
+

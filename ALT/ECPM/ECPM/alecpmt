@@ -1,0 +1,2 @@
+A68k ecpm2.asm -hecpmt.hdr -oecpmt.o
+BLink ecpm1.o ecpmt.o small.lib to ecpmt

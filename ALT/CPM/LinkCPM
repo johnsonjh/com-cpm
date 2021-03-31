@@ -1,0 +1,3 @@
+alink >ram:cpm.err df1:cz.od+df1:ce.od+df1:zek.od+df1:zekcb.od+df1:zekdd.od+df1:zeked.od library libs:amiga.lib to df1:cpm map nil:
+date >now
+

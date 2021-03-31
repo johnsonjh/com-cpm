@@ -1,0 +1,1419 @@
+;	z80 emulator subkernel
+;	$dd and $fd two byte opcodes
+
+zekddver:	dc.b	'Zekdd Ver: 00018   Date: 25-Sep-88 21:34:37 ',0
+
+;	This source code is released into the public domain for
+;	non-profit use only.
+;	Copyright (C) 1988, Ulf Nordquist. All Rights Reserved !'
+;	Ulf Nordquist
+;	Brunnehagen 36
+;	417 47 Gothenburg
+;	Sweden
+
+;	self modifying code is used
+
+;	history
+;	880222 : first
+;		 $dd opcodes
+;	880223 : $fd opcodes
+;		 $ddcb & $fdcb
+;	880430 : ver 00001
+;	880710 : modify code in main emu loop when debug count
+;		 ddinit, ddstart, ddstop
+;	880820 : include zekmc.i
+;	880821 : use setflgl in logical instructions
+;	880911 : bug1 chk if really count, can be set by trace
+;	880920 : bug2 ld h,(ix+dd) ld l,(ix+dd) ld (ix+dd),h ld (ix+dd),l
+
+;	globals from this module
+
+		xdef	ddinit
+		xdef	ddstart
+		xdef	ddstop
+		xdef	z80opcdd
+		xdef	z80opcfd
+		xdef	zekddver
+
+;	externals from zek
+
+		xref	cntbuf
+		xref	ddoffs
+		xref	fdoffs
+		xref	setflg
+		xref	setflgl
+		xref	setflgnc
+		xref	z80emu1
+
+;	externals from cz
+
+		xref	z80opc2ni
+		xref	glflgs
+
+;	macro
+
+		include zekmc.i
+
+		ds.w	0			;alignment
+
+;	ddinit
+;	initialize emulation parameters
+;	start count of opcode, bdos & bios
+;	stop count of opcode, bdos & bios
+
+ddstart:
+ddstop:
+ddinit: 	move.l	#z80emuswdd,a6
+		move.w	(a6),d1                 ;get bra.s
+		move.w	cntinstdd,(a6)          ;put addq
+		move.w	d1,cntinstdd		;save bra.s
+		move.l	#z80emuswfd,a6
+		move.w	(a6),d1                 ;get bra.s
+		move.w	cntinstfd,(a6)          ;put addq
+		move.w	d1,cntinstfd		;save bra.s
+		rts
+
+;	entry : d0.l=fa'fa, d1.l=hl'hl, d2.l=de'de, d3.l=bc'bc
+;		d4.l=iyix
+;		d7.l=number of instructions to run, 0=until halt
+;		a0.w=pc, a1.w=sp
+;		a2.l=ptr to scratch, a3.l=z80opctab,
+;		a4.l=ptr z80 program area start
+;		the program area must be configured as this:
+;		relative start	0      $8000	$ffff
+;				|________|________|
+;		pc	      $8000	 0	$7fff
+;		d0 flags 15 14 13 12 11 10  9  8
+;			  s  z	-  h  -  v  n  c
+;	scratch use : d5.l, d6.l, a5.l, a6.l
+;	limitations
+
+;	opcode $dd decode instruction
+
+z80opcdd:	moveq.l #0,d6
+		move.b	0(a4,a0.w),d6           ;2:nd opcode
+z80emuswdd:	bra.s	countdd
+z80emu3dd:	asl.w	#2,d6			;4 bytes per entry
+		move.l	#z80opctabdd,a5
+		move.l	0(a5,d6.l),a5
+		move.b	0(a4,a0.w),d6           ;possible displacement
+		ext.w	d6			;make word
+		bclr.b	#0,flags		;flg ix
+		add.w	d4,d6			;ix+dd
+		jmp	(a5)                    ;do instruction
+
+;	opcode $fd decode instruction
+
+z80opcfd:	moveq.l #0,d6
+		move.b	0(a4,a0.w),d6           ;2:nd opcode
+z80emuswfd:	bra.s	countfd
+z80emu3fd:	asl.w	#2,d6			;4 bytes per entry
+		move.l	#z80opctabdd,a5
+		move.l	0(a5,d6.l),a5
+		move.b	0(a4,a0.w),d6           ;possible displacement
+		ext.w	d6			;make word
+		swap	d4			;ix<->iy
+		bset.b	#0,flags		;flg iy
+		add.w	d4,d6			;iy+dd
+		jmp	(a5)                    ;do instruction
+
+
+;	after instruction
+
+z80eend:	btst.b	#0,flags
+		bne.s	z80eend1		;if iy
+		jmp	z80emu1
+z80eend1:	swap	d4			;ix<->iy, restore
+		jmp	z80emu1
+
+;	code if debug count mode $dd opcode
+
+countdd:	btst.b	#5,glflgs
+		beq.s	countdd1		;if no count
+		move.l	cntbuf,a5
+		add.w	d6,a5
+		addq.b	#1,ddoffs(a5)           ;inc cnt
+		bne.s	countdd1		;if not max cnt
+		subq.b	#1,ddoffs(a5)           ;restore max cnt
+countdd1:	addq.l	#1,a0
+		bra.s	z80emu3dd		;cont emu
+
+;	code if debug count mode $fd opcode
+
+countfd:	btst.b	#5,glflgs
+		beq.s	countfd1		;if no count
+		move.l	cntbuf,a5
+		add.w	d6,a5
+		addq.b	#1,fdoffs(a5)           ;inc cnt
+		bne.s	countfd1		;if not max cnt
+		subq.b	#1,fdoffs(a5)           ;restore max cnt
+countfd1:	addq.l	#1,a0
+		bra.s	z80emu3fd		;cont emu
+
+;	not implemented opcode
+
+z80emuni:	addq.l	#4,a7			;ret addr
+		jmp	z80opc2ni
+
+;	not implemented opcode for $ddcb
+
+z80emuni2:	subq.l	#2,a0
+		bra.s	z80emuni
+
+;	nops
+
+z80opc64:
+z80opc6d:	bra	z80eend
+
+;	$09 add ix,bc
+
+z80opc09:	addixrr d3
+		bra	z80eend
+
+;	$19 add ix,de
+
+z80opc19:	addixrr d2
+		bra	z80eend
+
+;	$21 ld ix,nn
+
+z80opc21:	ldrrimm d4
+		bra	z80eend
+
+;	$22 ld (nn),ix
+
+z80opc22:	ldindrr d4
+		bra	z80eend
+
+;	$23 inc ix
+
+z80opc23:	addq.w	#1,d4
+		bra	z80eend
+
+;	$24 inc ixh
+
+z80opc24:	inchr	d4
+		bra	z80eend
+
+;	$25 dec ixh
+
+z80opc25:	dechr	d4
+		bra	z80eend
+
+;	$26 ld ixh,n
+
+z80opc26:	ldhrimm d4
+		bra	z80eend
+
+;	$29 add ix,ix
+
+z80opc29:	addixrr d4
+		bra	z80eend
+
+;	$2a ld ix,(nn)
+
+z80opc2a:	ldrrind d4
+		bra	z80eend
+
+;	$2b dec ix
+
+z80opc2b:	subq.w	#1,d4
+		bra	z80eend
+
+;	$2c inc ixl
+
+z80opc2c:	addq.b	#1,d4
+		jsr	setflgnc
+		bra	z80eend
+
+;	$2d dec ixl
+
+z80opc2d:	subq.b	#1,d4
+		jsr	setflgnc
+		bra	z80eend
+
+;	$2e ld ixl,n
+
+z80opc2e:	move.b	0(a4,a0.w),d4           ;new l
+		addq.l	#1,a0
+		bra	z80eend
+
+;	$34 inc (ix+dd)
+
+z80opc34:	addq.l	#1,a0			;skip disp
+		addq.b	#1,0(a4,d6.w)
+		jsr	setflgnc
+		bra	z80eend
+
+;	$35 dec (ix+dd)
+
+z80opc35:	addq.l	#1,a0			;skip disp
+		subq.b	#1,0(a4,d6.w)
+		jsr	setflgnc
+		bra	z80eend
+
+;	$36 ld (ix+dd),n
+
+z80opc36:	addq.l	#2,a0			;skip disp & n
+		move.b	-1(a4,a0.w),d5          ;n
+		move.b	d5,0(a4,d6.w)
+		bra	z80eend
+
+;	$39 add ix,sp
+
+z80opc39:	move.w	a1,d6			;sp
+		addixrr d6
+		bra	z80eend
+
+;	$44 ld b,ixh
+
+z80opc44:	move.b	d3,d6
+		move.w	d4,d3			;h->b
+		move.b	d6,d3			;restore c
+		bra	z80eend
+
+;	$45 ld b,ixl
+
+z80opc45:	rol.w	#8,d3			;b<->c
+		move.b	d4,d3			;l->b
+		rol.w	#8,d3			;b<->c, restore
+		bra	z80eend
+
+;	$46 ld b,(ix+dd)
+
+z80opc46:	addq.l	#1,a0			;skip disp
+		rol.w	#8,d3			;b<->c
+		move.b	0(a4,d6.w),d3           ;b
+		rol.w	#8,d3			;b<->c, restore
+		bra	z80eend
+
+;	$4c ld c,ixh
+
+z80opc4c:	move.w	d4,(a2)
+		move.b	(a2),d3                 ;h->c
+		bra	z80eend
+
+;	$4d ld c,ixl
+
+z80opc4d:	move.b	d4,d3			;l->c
+		bra	z80eend
+
+;	$4e ld c,(ix+dd)
+
+z80opc4e:	addq.l	#1,a0			;skip disp
+		move.b	0(a4,d6.w),d3           ;c
+		bra	z80eend
+
+;	$54 ld d,ixh
+
+z80opc54:	move.b	d2,d6
+		move.w	d4,d2			;h->d
+		move.b	d6,d2			;restore e
+		bra	z80eend
+
+;	$55 ld d,ixl
+
+z80opc55:	rol.w	#8,d2			;d<->e
+		move.b	d4,d2			;l->d
+		rol.w	#8,d2			;d<->e, restore
+		bra	z80eend
+
+;	$56 ld d,(ix+dd)
+
+z80opc56:	addq.l	#1,a0			;skip disp
+		rol.w	#8,d2			;d<->e
+		move.b	0(a4,d6.w),d2           ;d
+		rol.w	#8,d2			;d<->e, restore
+		bra	z80eend
+
+;	$5c ld e,ixh
+
+z80opc5c:	move.w	d4,(a2)
+		move.b	(a2),d2                 ;h->e
+		bra	z80eend
+
+;	$5d ld e,ixl
+
+z80opc5d:	move.b	d4,d2			;l->e
+		bra	z80eend
+
+;	$5e ld e,(ix+dd)
+
+z80opc5e:	addq.l	#1,a0			;skip disp
+		move.b	0(a4,d6.w),d2           ;e
+		bra	z80eend
+
+;	$60 ld ixh,b
+
+z80opc60:	move.b	d4,d6
+		move.w	d3,d4			;b->h
+		move.b	d6,d4			;restore l
+		bra	z80eend
+
+;	$61 ld ixh,c
+
+z80opc61:	rol.w	#8,d4			;h<->l
+		move.b	d3,d4			;c->h
+		rol.w	#8,d4			;h<->l, restore
+		bra	z80eend
+
+;	$62 ld ixh,d
+
+z80opc62:	move.b	d4,d6
+		move.w	d2,d4			;d->h
+		move.b	d6,d4			;restore l
+		bra	z80eend
+
+;	$63 ld ixh,e
+
+z80opc63:	rol.w	#8,d4			;h<->l
+		move.b	d2,d4			;e->h
+		rol.w	#8,d4			;h<->l, restore
+		bra	z80eend
+
+;	$64 ld ixh,ixh is nop
+
+;	$65 ld ixh,ixl
+
+z80opc65:	move.b	d4,d6
+		rol.w	#8,d4			;h<->l
+		move.b	d6,d4			;restore l
+		bra	z80eend
+
+;	$66 ld h,(ix+dd)
+
+z80opc66:	addq.l	#1,a0			;skip disp
+		rol.w	#8,d1			;h<->l
+		move.b	0(a4,d6.w),d1           ;h
+		rol.w	#8,d1			;h<->l, restore
+		bra	z80eend
+
+;	$67 ld ixh,a
+
+z80opc67:	rol.w	#8,d4			;h<->l
+		move.b	d0,d4			;a->h
+		rol.w	#8,d4			;h<->l, restore
+		bra	z80eend
+
+;	$68 ld ixl,b
+
+z80opc68:	move.w	d3,(a2)
+		move.b	(a2),d4                 ;b->l
+		bra	z80eend
+
+;	$69 ld ixl,c
+
+z80opc69:	move.b	d3,d4			;c->l
+		bra	z80eend
+
+;	$6a ld ixl,d
+
+z80opc6a:	move.w	d2,(a2)
+		move.b	(a2),d4                 ;d->l
+		bra	z80eend
+
+;	$6b ld ixl,e
+
+z80opc6b:	move.b	d2,d4			;e->l
+		bra	z80eend
+
+;	$6c ld ixl,ixh
+
+z80opc6c:	move.w	d4,(a2)
+		move.b	(a2),d4                 ;h->l
+		bra	z80eend
+
+;	$6d ld ixl,ixl is nop
+
+;	$6e ld l,(ix+dd)
+
+z80opc6e:	addq.l	#1,a0			;skip disp
+		move.b	0(a4,d6.w),d1           ;l
+		bra	z80eend
+
+;	$6f ld ixl,a
+
+z80opc6f:	move.b	d0,d4			;a->l
+		bra	z80eend
+
+;	$70 ld (ix+dd),b
+
+z80opc70:	addq.l	#1,a0			;skip disp
+		move.w	d3,d5
+		rol.w	#8,d5
+		move.b	d5,0(a4,d6.w)           ;b
+		bra	z80eend
+
+;	$71 ld (ix+dd),c
+
+z80opc71:	addq.l	#1,a0			;skip disp
+		move.b	d3,0(a4,d6.w)           ;c
+		bra	z80eend
+
+;	$72 ld (ix+dd),d
+
+z80opc72:	addq.l	#1,a0			;skip disp
+		move.w	d2,d5
+		rol.w	#8,d5
+		move.b	d5,0(a4,d6.w)           ;d
+		bra	z80eend
+
+;	$73 ld (ix+dd),e
+
+z80opc73:	addq.l	#1,a0			;skip disp
+		move.b	d2,0(a4,d6.w)           ;e
+		bra	z80eend
+
+;	$74 ld (ix+dd),h
+
+z80opc74:	addq.l	#1,a0			;skip disp
+		move.w	d1,d5
+		rol.w	#8,d5
+		move.b	d5,0(a4,d6.w)           ;h
+		bra	z80eend
+
+;	$75 ld (ix+dd),l
+
+z80opc75:	addq.l	#1,a0			;skip disp
+		move.b	d1,0(a4,d6.w)           ;l
+		bra	z80eend
+
+;	$77 ld (ix+dd),a
+
+z80opc77:	addq.l	#1,a0			;skip disp
+		move.b	d0,0(a4,d6.w)           ;a
+		bra	z80eend
+
+;	$7c ld a,ixh
+
+z80opc7c:	move.w	d4,(a2)
+		move.b	(a2),d0                 ;h->a
+		bra	z80eend
+
+;	$7d ld a,ixl
+
+z80opc7d:	move.b	d4,d0			;l->a
+		bra	z80eend
+
+;	$7e ld a,(ix+dd)
+
+z80opc7e:	addq.l	#1,a0			;skip disp
+		move.b	0(a4,d6.w),d0           ;a
+		bra	z80eend
+
+;	$84 add a,ixh
+
+z80opc84:	move.w	d4,(a2)
+		add.b	(a2),d0                 ;a+h->a
+		jsr	setflg
+		bra	z80eend
+
+;	$85 add a,ixl
+
+z80opc85:	add.b	d4,d0			;a+l->a
+		jsr	setflg
+		bra	z80eend
+
+;	$86 add a,(ix+dd)
+
+z80opc86:	addq.l	#1,a0			;skip disp
+		add.b	0(a4,d6.w),d0           ;a+(ix+dd)->a
+		jsr	setflg
+		bra	z80eend
+
+;	$8c adc a,ixh
+
+z80opc8c:	move.w	d4,d6
+		rol.w	#8,d6			;h to lo
+		and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc8c1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc8c1:	addx.b	d6,d0			;a+h->a
+		jsr	setflg
+		bra	z80eend
+
+;	$8d adc a,ixl
+
+z80opc8d:	and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc8d1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc8d1:	addx.b	d4,d0			;a+l->a
+		jsr	setflg
+		bra	z80eend
+
+;	$8e adc a,(ix+dd)
+
+z80opc8e:	addq.l	#1,a0			;skip disp
+		and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc8e1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc8e1:	move.b	0(a4,d6.w),d6           ;(ix+dd)
+		addx.b	d6,d0			;a+(ix+dd)->a
+		jsr	setflg
+		bra	z80eend
+
+;	$94 sub ixh
+
+z80opc94:	move.w	d4,(a2)
+		sub.b	(a2),d0                 ;a-h->a
+		jsr	setflg
+		bra	z80eend
+
+;	$95 sub ixl
+
+z80opc95:	sub.b	d4,d0			;a-l->a
+		jsr	setflg
+		bra	z80eend
+
+;	$96 sub (ix+dd)
+
+z80opc96:	addq.l	#1,a0			;skip disp
+		sub.b	0(a4,d6.w),d0           ;a-(ix+dd)->a
+		jsr	setflg
+		bra	z80eend
+
+;	$9c sbc a,ixh
+
+z80opc9c:	move.w	d4,d6
+		rol.w	#8,d6			;h to lo
+		and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc9c1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc9c1:	subx.b	d6,d0			;a-h->a
+		jsr	setflg
+		bra	z80eend
+
+;	$9d sbc a,ixl
+
+z80opc9d:	and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc9d1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc9d1:	subx.b	d4,d0			;a-l->a
+		jsr	setflg
+		bra	z80eend
+
+;	$9e sbc a,(ix+dd)
+
+z80opc9e:	addq.l	#1,a0			;skip disp
+		and.b	#%11101111,ccr		;clr x
+		btst.l	#8,d0
+		beq.s	z80opc9e1		;if no cy
+		or.b	#%00010000,ccr		;set x
+z80opc9e1:	move.b	0(a4,d6.w),d6           ;(ix+dd)
+		subx.b	d6,d0			;a-(ix+dd)->a
+		jsr	setflg
+		bra	z80eend
+
+;	$a4 and ixh
+
+z80opca4:	move.w	d4,(a2)
+		and.b	(a2),d0                 ;a and h->a
+		jsr	setflgl
+		bra	z80eend
+
+;	$a5 and ixl
+
+z80opca5:	and.b	d4,d0			;a and l->a
+		jsr	setflgl
+		bra	z80eend
+
+;	$a6 and (ix+dd)
+
+z80opca6:	addq.l	#1,a0			;skip disp
+		and.b	0(a4,d6.w),d0           ;a and (ix+dd)->a
+		jsr	setflgl
+		bra	z80eend
+
+;	$ac xor ixh
+
+z80opcac:	move.w	d4,(a2)
+		move.b	(a2),d6
+		eor.b	d6,d0			;a xor h->a
+		jsr	setflgl
+		bra	z80eend
+
+;	$ad xor ixl
+
+z80opcad:	eor.b	d4,d0			;a xor l->a
+		jsr	setflgl
+		bra	z80eend
+
+;	$ae xor (ix+dd)
+
+z80opcae:	addq.l	#1,a0			;skip disp
+		move.b	0(a4,d6.w),d6           ;(ix+dd)
+		eor.b	d6,d0			;a xor (ix+dd)->a
+		jsr	setflgl
+		bra	z80eend
+
+;	$b4 or ixh
+
+z80opcb4:	move.w	d4,(a2)
+		or.b	(a2),d0                 ;a or h->a
+		jsr	setflgl
+		bra	z80eend
+
+;	$b5 or ixl
+
+z80opcb5:	or.b	d4,d0			;a or l->a
+		jsr	setflgl
+		bra	z80eend
+
+;	$b6 or (ix+dd)
+
+z80opcb6:	addq.l	#1,a0			;skip disp
+		or.b	0(a4,d6.w),d0           ;a or (ix+dd)->a
+		jsr	setflgl
+		bra	z80eend
+
+;	$bc cp ixh
+
+z80opcbc:	move.w	d4,(a2)
+		cmp.b	(a2),d0                 ;a-h
+		jsr	setflg
+		bra	z80eend
+
+;	$bd cp ixl
+
+z80opcbd:	cmp.b	d4,d0			;a-l
+		jsr	setflg
+		bra	z80eend
+
+;	$be cp (ix+dd)
+
+z80opcbe:	addq.l	#1,a0			;skip disp
+		cmp.b	0(a4,d6.w),d0           ;a-(ix+dd)
+		jsr	setflg
+		bra	z80eend
+
+;	opcode $ddcb decode instruction
+
+z80opccb:	addq.l	#1,a0			;skip displacement
+		moveq.l #0,d5
+		move.b	0(a4,a0.w),d5           ;3:rd opcode
+		addq.l	#1,a0
+		asl.w	#2,d5			;4 bytes per entry
+		move.l	#z80opctabcb,a5
+		move.l	0(a5,d5.l),a5
+		jmp	(a5)                    ;do instruction
+
+;	$e1 pop ix
+
+z80opce1:	pop	d4
+		bra	z80eend
+
+;	$e3 ex (sp),ix
+
+z80opce3:	move.b	1(a4,a1.w),d6           ;hi from stack
+		rol.w	#8,d6			;move to hi
+		move.b	0(a4,a1.w),d6           ;lo from stack
+		move.w	d6,a5
+		move.w	d4,d6			;ix
+		move.b	d6,0(a4,a1.w)           ;l to stack
+		rol.w	#8,d6			;move hi to lo
+		move.b	d6,1(a4,a1.w)           ;h to stack
+		move.w	a5,d4			;to ix
+		bra	z80eend
+
+;	$e5 push ix
+
+z80opce5:	push	d4
+		bra	z80eend
+
+;	$e9 jp (ix)
+
+z80opce9:	move.w	d4,a0
+		bra	z80eend
+
+;	$eb ex de,ix
+
+z80opceb:	move.w	d2,d6			;de
+		move.w	d4,d2			;ix to de
+		move.w	d6,d4			;de to ix
+		bra	z80eend
+
+;	$f9 ld sp,ix
+
+z80opcf9:	move.w	d4,a1
+		bra	z80eend
+
+;	$cb46 bit 0,(ix+dd)
+
+z80opccb46:	bset.l	#14,d0			;flg z
+		btst.b	#0,0(a4,d6.w)
+		beq	z80eend 		;if z
+		bclr.l	#14,d0			;flg nz
+		bra	z80eend
+
+;	$cb4e bit 1,(ix+dd)
+
+z80opccb4e:	bset.l	#14,d0			;flg z
+		btst.b	#1,0(a4,d6.w)
+		beq	z80eend 		;if z
+		bclr.l	#14,d0			;flg nz
+		bra	z80eend
+
+;	$cb56 bit 2,(ix+dd)
+
+z80opccb56:	bset.l	#14,d0			;flg z
+		btst.b	#2,0(a4,d6.w)
+		beq	z80eend 		;if z
+		bclr.l	#14,d0			;flg nz
+		bra	z80eend
+
+;	$cb5e bit 3,(ix+dd)
+
+z80opccb5e:	bset.l	#14,d0			;flg z
+		btst.b	#3,0(a4,d6.w)
+		beq	z80eend 		;if z
+		bclr.l	#14,d0			;flg nz
+		bra	z80eend
+
+;	$cb66 bit 4,(ix+dd)
+
+z80opccb66:	bset.l	#14,d0			;flg z
+		btst.b	#4,0(a4,d6.w)
+		beq	z80eend 		;if z
+		bclr.l	#14,d0			;flg nz
+		bra	z80eend
+
+;	$cb6e bit 5,(ix+dd)
+
+z80opccb6e:	bset.l	#14,d0			;flg z
+		btst.b	#5,0(a4,d6.w)
+		beq	z80eend 		;if z
+		bclr.l	#14,d0			;flg nz
+		bra	z80eend
+
+;	$cb76 bit 6,(ix+dd)
+
+z80opccb76:	bset.l	#14,d0			;flg z
+		btst.b	#6,0(a4,d6.w)
+		beq	z80eend 		;if z
+		bclr.l	#14,d0			;flg nz
+		bra	z80eend
+
+;	$cb7e bit 7,(ix+dd)
+
+z80opccb7e:	bset.l	#14,d0			;flg z
+		btst.b	#7,0(a4,d6.w)
+		beq	z80eend 		;if z
+		bclr.l	#14,d0			;flg nz
+		bra	z80eend
+
+;	$cb86 res 0,(ix+dd)
+
+z80opccb86:	bclr.b	#0,0(a4,d6.w)
+		bra	z80eend
+
+;	$cb8e res 1,(ix+dd)
+
+z80opccb8e:	bclr.b	#1,0(a4,d6.w)
+		bra	z80eend
+
+;	$cb96 res 2,(ix+dd)
+
+z80opccb96:	bclr.b	#2,0(a4,d6.w)
+		bra	z80eend
+
+;	$cb9e res 3,(ix+dd)
+
+z80opccb9e:	bclr.b	#3,0(a4,d6.w)
+		bra	z80eend
+
+;	$cba6 res 4,(ix+dd)
+
+z80opccba6:	bclr.b	#4,0(a4,d6.w)
+		bra	z80eend
+
+;	$cbae res 5,(ix+dd)
+
+z80opccbae:	bclr.b	#5,0(a4,d6.w)
+		bra	z80eend
+
+;	$cbb6 res 6,(ix+dd)
+
+z80opccbb6:	bclr.b	#6,0(a4,d6.w)
+		bra	z80eend
+
+;	$cbbe res 7,(ix+dd)
+
+z80opccbbe:	bclr.b	#7,0(a4,d6.w)
+		bra	z80eend
+
+;	$cbc6 set 0,(ix+dd)
+
+z80opccbc6:	bset.b	#0,0(a4,d6.w)
+		bra	z80eend
+
+;	$cbce set 1,(ix+dd)
+
+z80opccbce:	bset.b	#1,0(a4,d6.w)
+		bra	z80eend
+
+;	$cbd6 set 2,(ix+dd)
+
+z80opccbd6:	bset.b	#2,0(a4,d6.w)
+		bra	z80eend
+
+;	$cbde set 3,(ix+dd)
+
+z80opccbde:	bset.b	#3,0(a4,d6.w)
+		bra	z80eend
+
+;	$cbe6 set 4,(ix+dd)
+
+z80opccbe6:	bset.b	#4,0(a4,d6.w)
+		bra	z80eend
+
+;	$cbee set 5,(ix+dd)
+
+z80opccbee:	bset.b	#5,0(a4,d6.w)
+		bra	z80eend
+
+;	$cbf6 set 6,(ix+dd)
+
+z80opccbf6:	bset.b	#6,0(a4,d6.w)
+		bra	z80eend
+
+;	$cbfe set 7,(ix+dd)
+
+z80opccbfe:	bset.b	#7,0(a4,d6.w)
+		bra	z80eend
+
+;	data area
+;	initialized data area
+;	address table for z80 second opcode $dd
+
+z80opctabdd:	dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc09
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc19
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc21
+		dc.l  z80opc22
+		dc.l  z80opc23
+		dc.l  z80opc24
+		dc.l  z80opc25
+		dc.l  z80opc26
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc29
+		dc.l  z80opc2a
+		dc.l  z80opc2b
+		dc.l  z80opc2c
+		dc.l  z80opc2d
+		dc.l  z80opc2e
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc34
+		dc.l  z80opc35
+		dc.l  z80opc36
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc39
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc44
+		dc.l  z80opc45
+		dc.l  z80opc46
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc4c
+		dc.l  z80opc4d
+		dc.l  z80opc4e
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc54
+		dc.l  z80opc55
+		dc.l  z80opc56
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc5c
+		dc.l  z80opc5d
+		dc.l  z80opc5e
+		dc.l  z80emuni
+		dc.l  z80opc60
+		dc.l  z80opc61
+		dc.l  z80opc62
+		dc.l  z80opc63
+		dc.l  z80opc64
+		dc.l  z80opc65
+		dc.l  z80opc66
+		dc.l  z80opc67
+		dc.l  z80opc68
+		dc.l  z80opc69
+		dc.l  z80opc6a
+		dc.l  z80opc6b
+		dc.l  z80opc6c
+		dc.l  z80opc6d
+		dc.l  z80opc6e
+		dc.l  z80opc6f
+		dc.l  z80opc70
+		dc.l  z80opc71
+		dc.l  z80opc72
+		dc.l  z80opc73
+		dc.l  z80opc74
+		dc.l  z80opc75
+		dc.l  z80emuni
+		dc.l  z80opc77
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc7c
+		dc.l  z80opc7d
+		dc.l  z80opc7e
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc84
+		dc.l  z80opc85
+		dc.l  z80opc86
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc8c
+		dc.l  z80opc8d
+		dc.l  z80opc8e
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc94
+		dc.l  z80opc95
+		dc.l  z80opc96
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc9c
+		dc.l  z80opc9d
+		dc.l  z80opc9e
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opca4
+		dc.l  z80opca5
+		dc.l  z80opca6
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opcac
+		dc.l  z80opcad
+		dc.l  z80opcae
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opcb4
+		dc.l  z80opcb5
+		dc.l  z80opcb6
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opcbc
+		dc.l  z80opcbd
+		dc.l  z80opcbe
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opccb
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opce1
+		dc.l  z80emuni
+		dc.l  z80opce3
+		dc.l  z80emuni
+		dc.l  z80opce5
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opce9
+		dc.l  z80emuni
+		dc.l  z80opceb
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opcf9
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+
+;	address table for z80 third opcode $ddcb
+
+z80opctabcb:	dc.l  z80emuni2 		;$00
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2 		;$10
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2 		;$20
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2 		;$30
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2 		;$40
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccb46
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccb4e
+		dc.l  z80emuni2
+		dc.l  z80emuni2 		;$50
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccb56
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccb5e
+		dc.l  z80emuni2
+		dc.l  z80emuni2 		;$60
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccb66
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccb6e
+		dc.l  z80emuni2
+		dc.l  z80emuni2 		;$70
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccb76
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccb7e
+		dc.l  z80emuni2
+		dc.l  z80emuni2 		;$80
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccb86
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccb8e
+		dc.l  z80emuni2
+		dc.l  z80emuni2 		;$90
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccb96
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccb9e
+		dc.l  z80emuni2
+		dc.l  z80emuni2 		;$a0
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccba6
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccbae
+		dc.l  z80emuni2
+		dc.l  z80emuni2 		;$b0
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccbb6
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccbbe
+		dc.l  z80emuni2
+		dc.l  z80emuni2 		;$c0
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccbc6
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccbce
+		dc.l  z80emuni2
+		dc.l  z80emuni2 		;$d0
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccbd6
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccbde
+		dc.l  z80emuni2
+		dc.l  z80emuni2 		;$e0
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccbe6
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccbee
+		dc.l  z80emuni2
+		dc.l  z80emuni2 		;$f0
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccbf6
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80emuni2
+		dc.l  z80opccbfe
+		dc.l  z80emuni2
+
+;	debug count instruction
+
+cntinstdd:	addq.l	#1,a0
+cntinstfd:	addq.l	#1,a0
+
+;	various
+
+flags		dc.b	0		;bit 0 : emulate iy opcode
+
+		end
+

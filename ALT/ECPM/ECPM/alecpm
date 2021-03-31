@@ -1,0 +1,4 @@
+.key suffix/a
+A68k ecpm<suffix>.asm
+BLink ecpm1.o ecpm2.o small.lib to ecpm
+delete ecpmt

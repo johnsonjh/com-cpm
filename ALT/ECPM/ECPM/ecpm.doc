@@ -1,0 +1,175 @@
+
+                 ECPM - a CP/M emulator for the Amiga
+
+                     Version 2.01 - June 29, 1988
+
+                           by Willi Kusche
+
+                          An enhancement of:
+
+
+                 SIMCPM - a CP/M simulator for the Amiga
+
+                     by Jim Cathey and Charlie Gibbs
+
+                    Version 1.00 - September 15, 1987
+
+
+     This is a FREELY-DISTRIBUTABLE program.  Spread it around all you like,
+just don't sell it, and please keep the entire package (including this file)
+intact.  If you find any bugs or make any changes, please let me know - I'd
+like to keep my copy up to date.
+
+     This program is based on an article by Jim Cathey which ran in Dr. Dobb's
+Journal from January to March 1986.  The original program emulated an 8080,
+including CP/M BIOS and BDOS calls, on a CP/M-68K system.  I have modified the
+operating system interface to run under AmigaDOS (from the CLI only).
+
+     Note that the simulation is of an 8080, not a Z80.  However, the Z80
+instructions LDIR, LDDR, and CPIR have been supported.  This is because the
+setting of the carry flag is more like the Z80 than the 8080, and might fool
+such packages as BDS C, which would then try to use these instructions.  If
+there is enough interest, I could be persuaded to add full Z80 support.
+
+     The IN, OUT, EI, and DI instructions are currently ignored.
+
+     The following BDOS calls are not supported:
+
+          3 - reader input
+          4 - punch output
+         17 - search for first file
+         18 - search for next file
+         24 - get active drive map
+         28 - protect drive
+         29 - get read-only map
+         30 - set file attributes
+         32 - get/set user code
+
+     The only BIOS calls supported are those for program termination and
+console and list I/O.  (Low-level disk access could get scary.)  If a
+program attempts to use an unsupported BIOS or BDOS call, an appropriate
+error message will be displayed, along with a register dump, and the program
+will be terminated.
+
+     Basic H19 terminal emulation (similar to a VT52) has been provided.
+Escape sequences for cursor positioning, cursor to home, screen clearing,
+and insert and delete modes are translated to the corresponding Amiga
+sequences.  Any escape sequences that ECPM can't recognize are passed
+through unchanged.  You can disable all escape sequence translation by
+changing the equated value "h19" (in ECPM1.ASM) to from 1 to 0.
+
+     To speed up console output for programs which write one character at a
+time, I have included a buffered output option.  If you include the -b switch
+as the first command-line parameter, all console output will be held until one
+of the following events occurs:
+
+          - a carriage return, line feed, or bell character is written
+          - the buffer (currently 2K) becomes full
+          - a BIOS or BDOS call other than console output is made.
+
+It should be possible to use buffered output in just about any program.
+Note that if a program uses the "console output string" function (BDOS
+call 9), the entire string is written in a single operation even when
+buffering is not requested.
+
+     List output is sent to PRT:RAW.  This ensures that no newline translation
+will take place.  The printer is not opened until the first attempt is made to
+access it.  If the printer cannot be opened for any reason, the program will be
+terminated.  At program termination the printer will be closed if it was used.
+
+     If ECPM is brought up with no command-line parameters, it will present
+the standard CP/M A> prompt.  At this point you can run CP/M .COM files just
+like on a normal CP/M system.  The command line will be scanned for up to two
+FCBs and the tail will be passed to the program.  When the program terminates,
+the A> prompt will be re-displayed.  To return to AmigaDOS, enter a control-C
+(CP/M warm boot) at the A> prompt.
+
+     If command-line parameters are given, they will be passed to ECPM as if
+they had been entered at the A> prompt.  When the program terminates, ECPM
+will automatically return to AmigaDOS.  This allows you to run CP/M programs
+from an execute file.
+
+     Here are some sample invocations of ECPM:
+
+          ecpm
+               Loads the simulator, which presents the A> prompt and waits
+               for CP/M commands.  Type control-C at the prompt to exit.
+
+          ecpm -b
+               Same as above, except console output buffering is used.
+
+          ecpm myprog
+               Loads the simulator, which loads and runs the CP/M program
+               MYPROG.COM.  When MYPROG terminates, ECPM returns to AmigaDOS.
+
+          ecpm mbasic basprog
+               Loads the simulator, which loads Microsoft BASIC-80 (if you
+               have it), which in turn loads and runs BASPROG.BAS.  When
+               BASPROG issues a SYSTEM command, ECPM returns to AmigaDOS.
+
+          ecpm -b mbasic basprog
+               Same as above, but with console output buffering.  Since
+               MBASIC does all console I/O one character at a time, the
+               buffered option can speed it up considerably.
+
+     A trace version of the simulator, ECPMT, is included.  This program
+works like ECPM, but it provides optional instruction and BIOS/BDOS tracing.
+This is provided as a separate program because it must test whether to trace
+each instruction.  As a result, it runs slightly slower than ECPM, even when
+tracing is not active.
+
+     Before running each program, ECPMT will prompt you for starting and
+ending addresses for tracing, and whether you want BIOS/BDOS calls traced.
+Simulation starts with tracing disabled.  When ECPM executes an instruction
+at the starting address, tracing is turned on.  All 8080 registers and the
+top four stack entries, as well as the current instruction, are displayed
+for each instruction until the ending address is reached.  Tracing is then
+disabled until the start address is again encountered.  After displaying
+8 instructions, execution is suspended; enter G to go ahead with tracing
+disabled, Q to quit the program, or any other key to trace the next 8
+instructions.
+
+     If you have requested BIOS/BDOS call tracing, the message
+
+          BIOS CALL nn AT aaaa
+or
+          BDOS CALL nn AT aaaa
+
+will be displayed each time a BIOS or BDOS call is made.  The BDOS call
+number (contents of register C in hex) will replace "nn" for BDOS calls,
+while BIOS calls will set "nn" to a sequential number starting at 01 for
+program termination, 02 for console status, etc.  The address where the
+call is made will be taken from the top of the stack and displayed in
+place of "aaaa".
+
+     ECPM consists of two source modules, ECPM1.ASM and ECPM2.ASM.
+The trace version, ECPMT, is made by re-assembling ECPM2 and including
+the header file ECPMT.HDR.  This file includes a definition of the label
+"tracehd"; ECPM2.ASM checks for this label using an IFD directive, and if
+it finds it the trace code is included.The assembler must support an
+optional header file and the IFD directive.  No include files are needed,
+although SMALL.LIB is required for linking.
+
+     Please address any kudos, flames, etc. to
+
+          Charlie Gibbs
+          #21 - 21555 Dewdney Trunk Road
+          Maple Ridge, B.C.  V2X 3G6
+
+or to Larry Phillips or Jeff Lydiatt on CompuServe or Usenet.  (I don't have
+the time or money to live there myself.)
+
+********** NOTE **************************************
+
+     The documentation above is basically the same as what was released on
+Fred Fish disk number 109.  However, where the documentation conflicted with
+the enhanced version, it was altered.
+
+     Additional documentation is in the file named 'update.doc'.
+
+     This file created by:
+          Willi Kusche
+          SYSOP
+          KMMM Pascal BBS
+          July 2, 1988
+

@@ -1,0 +1,278 @@
+Update, 2008
+------------
+
+    Now that the Mac PowerPC platforms are being left in the dust I
+    decided to port the assembly-language synthetic CPU to them.  Why?
+    No good reason, mostly just curiosity to see how much better than
+    the C compiler I could do by careful hand-coding.  (I also wished
+    to use it as a vehicle for familiarizing myself with the PPC
+    because we use it at work.)  The port is roughly a line-by-line
+    translation of the original 680x0 code, this is probably
+    sub-optimal with regards to what the PPC could really do, but I
+    just wasn't up to the job of completely re-architecting it.  The
+    PPC's flag registers are sufficiently hard to access, and weird
+    enough once you get there, that I abandoned the original
+    memory-thrifty architecture of converting the native arithmetic
+    flags to the target's flags via small lookup tables in favor of an
+    approach where I look up the flags (and the sum/difference)
+    directly via large (128 KB) three-input tables.  (I had considered
+    this approach in the very beginning, but the original host machine
+    had all of 128 KB of RAM in it, of which half was going to be
+    dedicated to the target machine image space, leaving the other
+    half for the host OS _and_ the simulator.)  This approach also
+    enabled creation of a true half-carry flag, rather than recording
+    all arguments to add/subtract instructions for later use in
+    recreating a half-carry in any subsequent DAA instructions.  My
+    unfamiliarity with the PPC has also no doubt resulted in less than
+    optimal results, even given that architecture, especially as
+    pipeline and cache effects have been ignored.  I must say that I
+    find the PPC hard to write assembly for, but the bulk of that can
+    be blamed on poor documentation.  (Very few people do this, after
+    all.  It's a C compiler world now, so far as high-performance code
+    is concerned.)
+
+    I also began a port to the MIPS because we use those at work too,
+    and this _is_ an excellent vehicle for learning a processor's
+    native instruction set.  The move away from using the host
+    processor's native condition-code flags proved to be a good one,
+    because the MIPS doesn't even _have_ a condition code register!
+    However, though the resultant port builds I was unable to get it
+    to link properly so that it would actually execute.  I have left
+    finishing this 'til later, since my main objective (learning the
+    MIPS) was accomplished and I was getting tired of working on it.
+    The PPC timing results imply that the result would hardly be worth
+    it anyway.
+
+    Performance (in seconds for the test run):
+
+        4     8     10    20    25    25    233     800     3000   2330
+        Z-80  68000 68010 68020 68030 68030 PPC G3  PPC G4  Pent-D iC2Duo
+        CP/M  CP/M  DNIX  DNIX  NeXT  SVR4  OSX 2.8 OSX 3.5 XP/Cyg OSX 4.8
+        ====  ===== ===== ===== ===== ===== ======= ======= ====== =======
+   com   35*               19    20   18.5* 0.50    0.19
+   comt                    52    52         1.2     0.35
+   com10      82*     52   23    25
+   com10t            149   55    60
+   ccom              130   48    58         0.71    0.24    0.14   0.08
+   ccomt             260   91    92         1.3     0.38    0.17   0.13
+   comtest          2060  840   681         7.6     2.40
+   ccomtest                                 7.1     2.13    1.00   0.63
+
+ Note:	* Old numbers, not reproducible.  (Platforms long gone.)
+
+    Of particular interest is that while for the 680x0 platforms I
+    could beat the C code by a substantial margin, for the PPC it
+    wasn't even worth the effort!  Modern C compilers seem to mate to
+    modern RISC processors very well, imagine that.  What's more,
+    except for the large lookup table, the C version of the CPU is
+    several kilobytes _smaller_!  (This can be laid at the door of the
+    inline next macro, which doesn't seem to make any speed difference
+    when replaced with a branch to a central next routine, which does
+    make the assembly version smaller.)  Most instructive, though the
+    results were not exactly what I had expected.  (Which means this
+    was a worthy exercise.)
+
+    Also note that the C-only version of the comtest runs _slower_
+    than the one that includes assembly language, yet the simple
+    assembler version does run faster than the simple C version,
+    though not by a huge margin.  This tells me that the processor's
+    cache isn't big enough, and that comtest is starting to thrash the
+    cache a bit more than ccomtest did, as it is larger.  Interesting.
+
+    Two additional makefiles have been added, make.ppc and make.mips,
+    the desired file should be linked to Makefile, as appropriate.
+
+******************************************************************************
+
+Update, 2006
+------------
+    The simulator has recently been ported to an all-C version, which
+    runs not only on the Unix systems that the assembly-language
+    version runs on (albeit slower), but also on much more modern
+    machines.  As one might imagine, hundreds to thousands of
+    megahertz host machines really perk the old girl up, even with the
+    innate 2-3x reduction in efficiency of C versus hand-tuned
+    assembly language.  The original argument against doing the
+    simulation in C has been nullified by the march of time.
+
+    The simulation environment has been enhanced to support CP/M
+    drives A: through P:, the full set, though not to the associated
+    16 user spaces per drive.  These translate to directories (one
+    each) under Unix, and which are specified on the command line.
+    Also provided is a way to 'bury' selected files within the
+    simulator itself.  This lets something like WordStar, which
+    requires overlay files to always be available, edit files anywhere
+    in the system, just like any native editor.  (Of course you have
+    to beware the difference in CP/M versus host system line
+    delimiters, and CP/M's 128-byte multiple file sizes with embedded
+    control-Z's for EOF.  So in fact it's not really all that
+    practical to _use_ as a host system editor unless you post-process
+    its output.)  File burial allows for single-file executable images
+    to be built that act _exactly_ as a native implementation might.
+
+    The flags simulation has been improved somewhat, in both the C and
+    original assembly-language implementations.  Still not perfect,
+    however, but apparently good enough for most uses.  On the 680x0
+    machines special simulators can be built that pit the two
+    implementations against each other.  This was useful to help
+    bootstrap themselves to greater levels of accuracy, and both
+    implementations benefitted.
+
+    A makefile for Mac OS X has been added, named (obviously enough)
+    make.osx, it should be linked to Makefile if appropriate.  It's
+    the one to use for any non-680x0 machine as it's the one that's
+    C-only.  Changing one #define at the front specifies whether the
+    target system is DNIX, SVR2-3/SVR4, or BSD in flavor.  It has been
+    compiled and run unchanged (except for the flavor selector) on OS
+    X, Cygwin, and FreeBSD and, of course, on my original NeXTStep and
+    DNIX machines.
+
+    As should be obvious, porting (to anything Unix-ey) is now a
+    nearly trivial exercise.  The most Unix-specific code is in the
+    directory listing logic, what's there now is your choice of a
+    semi-portable (among Unices) dirent-library-based directory
+    reader, or a really nasty exec of find and sed in a pipeline.
+    This could be converted to something else, the changes should be
+    localized.  The other system-specific code is the terminal
+    handling code.  (That's the main reason for the flavor selector
+    #define in the first place, because the Unices are so _un_-alike
+    in this area.)  This simulator has always assumed the presence of
+    a serial terminal, or of equivalent terminal services.  For
+    environments where this is not available, such as Windows, MacOS
+    or AmigaDOS, porting will obviously be much more involved.  (It
+    runs fine with Cygwin under Windows, that's the easy way to go
+    there.)
+
+    The C simulation code was written from scratch, so it's unrestricted.
+
+    Performance (in seconds for the test run):
+
+        4     8     10    20    25    25    233     800     3000   2330
+        Z-80  68000 68010 68020 68030 68030 PPC G3  PPC G4  Pent-D iC2Duo
+        CP/M  CP/M  DNIX  DNIX  NeXT  SVR4  OSX 2.8 OSX 3.5 XP/Cyg OSX 4.8
+        ====  ===== ===== ===== ===== ===== ======= ======= ====== =======
+   com   35*               19    20   18.5*
+   comt                    52    52
+   com10      82*     52   23    25
+   com10t            149   55    60
+   ccom              130   48    58         0.67    0.24    0.14   0.08
+   ccomt             260   91    92         1.1     0.38    0.17   0.13
+   comtest          2060  840   681         6.0     2.13    1.00   0.63
+
+ Note:	* Old numbers, not reproducible.  (Platforms long gone.)
+
+   This simulator is probably not the fastest one out there, nor is it
+   particularly complete, nor is it feature-laden, and it is _far_
+   from the only one out there!  What it _is_ is venerable, it has
+   existed (in some form) since 1984, making it one of the first, if
+   not _the_ first, CP/M simulators designed for practical use.  (I
+   won't count any potential simulations that may have existed at chip
+   manufacturers.)  I got it published in Dr. Dobb's Journal, my one
+   and only publication.
+
+   Compilation time is also highly variable.  The DNIX development box
+   compiles everything in just over 11 minutes, the 233 MHz Mac PPC in
+   2 minutes flat.  (Besides being considerably faster, it also builds
+   many fewer executables, which helps.)  The NeXT, however, is quite
+   the slug at nearly 2 hours.  Its C optimizer extracts a significant
+   penalty, with it turned off the time drops to about 50 minutes.
+   The lack of the coffwrap utility (or equivalent, for directly
+   embedding binary files in a linkable object, which is used when
+   making the embedded executable samples of WordStar, MBASIC, etc.)
+   also hurts significantly, as many large data files are pushed
+   through its C compiler when compared to its DNIX counterpart.  On
+   the PPC, the lack of coffwrap functionality is not particularly
+   significant.
+
+******************************************************************************
+
+Introduction (1993)
+-------------------
+    This is a CP/M 2.2 Simulator that simulates an 8080 CPU and a CP/M 2.2
+    OS (if you can call it that) environment.  The heart of the simulator
+    is written in 680x0 assembly language for speed.  It has been tested
+    under DNIX (a SVR2 compatible with many SVR3, BSD, Xenix, and Sun
+    extensions), on a 68030 NeXT, and on a 68030 Amiga running SVR4.  One
+    'benchmark' shows that on machines of the 68020/68030 class the
+    simulator performs about as well as a 7 MHz Z-80 would.  Other tests
+    indicate that this is somewhat optimistic.
+
+Why CP/M?
+---------
+    Why not?  I updated this program (originally running under CP/M
+    68K) out of curiosity to see how it would run on something newer
+    than the 68000 S-100 system it was originally running on, and out
+    of a perverse desire to make my colleagues sick.
+
+What You Get
+------------
+    The simulator gives you a simple CP/M run-time environment with only
+    one drive (A:), which is the current directory when the simulator is
+    invoked.  There is no CCP (the command processor, analogous to the
+    Unix shell); programs must be run individually under the simulator.
+    The simulator can be invoked so that the listing (printer) output goes
+    to a file (otherwise it is discarded).  It normally converts H19 escape
+    sequences (and a couple of other oddballs) to VT100 sequences, since
+    much CP/M software doesn't know what a VT100 is, yet it is the current
+    Unix 'standard'.  If CP/M had any 'standard' (it didn't, really) it
+    was the H19.  This feature can be disabled, if needed.  Similarly, the
+    simulation optionally maps DEL to BS on keyboard input, since BS is
+    the CP/M 'standard', whereas DEL is many Unix systems' standard.  The
+    simulator maps all filenames to uppercase (for display by CP/M
+    programs), and converts them to lowercase when actually doing file
+    I/O.  Several of the more esoteric BDOS calls are not supported.
+
+    Please remember that CP/M text files use both carriage returns and
+    linefeeds (one each) to delimit lines, and the end-of-file character
+    is an embedded control-Z.  The EOF character is needed because CP/M
+    files are always multiples of 128 bytes --- there is no byte-level
+    file length indication.  CP/M programs can get annoyed if files fed to
+    them don't conform to these expectations.
+
+Porting
+-------
+    The hardest part of porting this program is getting the synthetic CPU
+    (assembly language) module to assemble since in the infinite wisdom of
+    the Unix world no vendor seems to use Motorola's standard mnemonics.
+    The module is written using the DNIX assembler syntax (supposedly MIT
+    mnemonics with Motorola standard addressing syntax), and is sed'ed to
+    whatever is necessary.  (It actually started life under CP/M 68K,
+    using Motorola standard mnemonics, but I converted it to be most
+    compatible with DNIX, since that's what I use most of the time.)  The
+    C pre-processor is used on the assembly module, so some sed-ing is
+    always needed to get things like the octothorpe (#) character through
+    it.  If your cpp can't hack it, or is nonexistent, more work will be
+    required.
+
+    I have left as an exercise for the reader the writing of the synthetic
+    CPU module for non-680x0 systems.  I considered writing one in C to
+    serve as a model, but it would function so slowly on the systems I use
+    (the ones I _did_ get it working on) that I didn't want to waste my
+    time.  It's not like I need a CP/M simulator for anything after all.  The
+    energetic could write one fairly easily (how hard can an 8080 be after
+    all?), but for real speed a new assembly-language module should be
+    written.  It would be particularly efficient on an x86 machine, since
+    the slowest part of the simulation is getting the flags right.  The
+    x86 and the 8080 have the same flags, so it's probable that the 8080
+    flags could just be taken straight out of the x86 flags register (i.e.
+    no work at all).  However, since I think that most x86 machines are
+    evil incarnate, I refuse to take a stab at the project (except maybe
+    with a wooden stake).
+
+    There are three makefiles provided, one for DNIX, one for NeXT, and
+    one for vanilla (?) System 5.  The appropriate file should be linked
+    to the name Makefile, then you should just be able to type 'make'.
+    If I were better at multi-system configuration programs this could
+    probably have been made more elegant, but it works well enough for me.
+
+Terms
+-----
+    As was the case for its predecessor, this program is in the Public
+    Domain.  All I ask is that my name be left on the code if it is used
+    elsewhere.  (As if that's likely at _this_ late date!)  The Z-80
+    simulation routines were taken from an independant Amiga port/
+    enhancement of the original code done by Charlie Gibbs and Willi
+    Kusche.  Their code is slightly more restricted.  I have placed their
+    disclaimer at the front of com.c; their code is conditionally included
+    in the simulator.  If it isn't included, you get a plain 8080 CPU with
+    a few Z-80 instructions (as before under CP/M-68K).  Enjoy!

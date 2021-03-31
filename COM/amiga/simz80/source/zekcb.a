@@ -1,0 +1,1554 @@
+;	z80 emulator subkernel
+;	$cb two byte opcode instructions
+
+zekcbver:	dc.b	'Zekcb Ver: 00027   Date: 25-Sep-88 21:13:40 ',0
+
+;	This source code is released into the public domain for
+;	non-profit use only.
+;	Copyright (C) 1988, Ulf Nordquist. All Rights Reserved !
+;	Ulf Nordquist
+;	Brunnehagen 36
+;	417 47 Gothenburg
+;	Sweden
+
+;	self modifying code is used
+
+;	history
+;	880222 : first
+;		 bit n,r, res n,r, set n,r
+;	880430 : ver 00001
+;	880710 : modify code in main emu loop when debug count
+;		 cbinit, cbstart, cbstop
+;	880819 : macros, include zekmc.i
+;	880820 : use bit macro
+;	880911 : bug1 chk if really count, can be set by trace
+;	880917 : rl a,c,e,l
+;	880924 : rr r, rl r, sla r, sra r, srl r
+
+;	globals from this module
+
+		xdef	cbinit
+		xdef	cbstart
+		xdef	cbstop
+		xdef	z80opccb
+		xdef	zekcbver
+
+;	externals from zek
+
+		xref	cboffs
+		xref	cntbuf
+		xref	z80emu1
+		xref	setflg
+		xref	setflgl
+
+;	externals from ze
+
+		xref	z80opc2ni
+		xref	glflgs
+
+		section zekcb,code
+
+;	macros
+
+		include zekmc.i
+
+		ds.w	0			;alignment
+
+;	cbinit
+;	initialize emulation parameters
+;	start for count of opcode, bdos & bios
+;	stop count of opcode, bdos & bios
+
+cbstart:
+cbstop:
+cbinit: 	move.l	#z80emusw,a6
+		move.w	(a6),d1                 ;get bra.s
+		move.w	cntinst,(a6)            ;put addq
+		move.w	d1,cntinst		;save bra.s
+		rts
+
+;	entry : d0.l=fa'fa, d1.l=hl'hl, d2.l=de'de, d3.l=bc'bc
+;		d4.l=iyix
+;		d7.l=number of instructions to run, 0=until halt
+;		a0.w=pc, a1.w=sp,
+;		a2.l=ptr to scratch, a3.l=z80opctab,
+;		a4.l=ptr middle of z80 pgm area
+;		the program area must be configured as this:
+;		relative start	0      $8000	$ffff
+;				|________|________|
+;		pc	      $8000	 0	$7fff
+;		d0 flags 15 14 13 12 11 10  9  8
+;			  s  z	-  h  -  v  n  c
+;	scratch use : d5.l, d6.l, a5.l, a6.l
+;	limitations:
+;	$00-$3f, rotates and shifts, is unimplemented
+
+;	$cd 1:st byte in special 2 byte opcodes
+;	decode instruction
+
+z80opccb:	moveq.l #0,d6
+		move.b	0(a4,a0.w),d6           ;2:nd opcode
+z80emusw:	bra.s	count			;replaced with addq.l #1,a0
+z80emu3:	asl.w	#2,d6			;4 bytes per entry
+		move.l	#z80opctabcb,a5
+		move.l	0(a5,d6.l),a5
+		jmp	(a5)                    ;do instruction
+
+;	code if debug count mode
+
+count:		btst.b	#5,glflgs
+		beq.s	count1			;if no count
+		move.l	cntbuf,a5
+		add.w	d6,a5
+		addq.b	#1,cboffs(a5)           ;inc cnt
+		bne.s	count1			;if not max cnt
+		subq.b	#1,cboffs(a5)           ;restore max cnt
+count1: 	addq.l	#1,a0
+		bra.s	z80emu3 		;cont emu
+
+;	not implemented opcode
+
+z80emuni:	addq.l	#4,a7			;ret addr
+		jmp	z80opc2ni
+
+;	$10 rl b
+
+z80opc10:	hrlr	d3
+		jmp	z80emu1
+
+;	$11 rl c
+
+z80opc11:	rlr	d3
+		jmp	z80emu1
+
+;	$12 rl d
+
+z80opc12:	hrlr	d2
+		jmp	z80emu1
+
+;	$13 rl e
+
+z80opc13:	rlr	d2
+		jmp	z80emu1
+
+;	$14 rl h
+
+z80opc14:	hrlr	d1
+		jmp	z80emu1
+
+;	$15 rl l
+
+z80opc15:	rlr	d1
+		jmp	z80emu1
+
+;	$16 rl (hl)
+
+z80opc16:	move.b	0(a4,d1.w),d6
+		rlr	d6
+		move.b	d6,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$17 rl a
+
+z80opc17:	rlr	d0
+		jmp	z80emu1
+
+;	$18 rr b
+
+z80opc18:	hrrr	d3
+		jmp	z80emu1
+
+;	$19 rr c
+
+z80opc19:	rrr	d3
+		jmp	z80emu1
+
+;	$1a rr d
+
+z80opc1a:	hrrr	d2
+		jmp	z80emu1
+
+;	$1b rr e
+
+z80opc1b:	rrr	d2
+		jmp	z80emu1
+
+;	$1c rr h
+
+z80opc1c:	hrrr	d1
+		jmp	z80emu1
+
+;	$1d rr l
+
+z80opc1d:	rrr	d1
+		jmp	z80emu1
+
+;	$1e rr (hl)
+
+z80opc1e:	move.b	0(a4,d1.w),d6
+		rrr	d6
+		move.b	d6,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$1f rr a
+
+z80opc1f:	rrr	d0
+		jmp	z80emu1
+
+;	$20 sla b
+
+z80opc20:	hslar	d3
+		jmp	z80emu1
+
+;	$21 sla c
+
+z80opc21:	slar	d3
+		jmp	z80emu1
+
+;	$22 sla d
+
+z80opc22:	hslar	d2
+		jmp	z80emu1
+
+;	$23 sla e
+
+z80opc23:	slar	d2
+		jmp	z80emu1
+
+;	$24 sla h
+
+z80opc24:	hslar	d1
+		jmp	z80emu1
+
+;	$25 sla l
+
+z80opc25:	slar	d1
+		jmp	z80emu1
+
+;	$26 sla (hl)
+
+z80opc26:	move.b	0(a4,d1.w),d6
+		slar	d6
+		move.b	d6,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$27 sla a
+
+z80opc27:	slar	d0
+		jmp	z80emu1
+
+;	$28 sra b
+
+z80opc28:	hsrar	d3
+		jmp	z80emu1
+
+;	$29 sra c
+
+z80opc29:	srar	d3
+		jmp	z80emu1
+
+;	$2a sra d
+
+z80opc2a:	hsrar	d2
+		jmp	z80emu1
+
+;	$2b sra e
+
+z80opc2b:	srar	d2
+		jmp	z80emu1
+
+;	$2c sra h
+
+z80opc2c:	hsrar	d1
+		jmp	z80emu1
+
+;	$2d sra l
+
+z80opc2d:	srar	d1
+		jmp	z80emu1
+
+;	$2e sra (hl)
+
+z80opc2e:	move.b	0(a4,d1.w),d6
+		srar	d6
+		move.b	d6,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$2f sra a
+
+z80opc2f:	slar	d0
+		jmp	z80emu1
+
+;	$38 srl b
+
+z80opc38:	hsrlr	d3
+		jmp	z80emu1
+
+;	$39 srl c
+
+z80opc39:	srlr	d3
+		jmp	z80emu1
+
+;	$3a srl d
+
+z80opc3a:	hsrlr	d2
+		jmp	z80emu1
+
+;	$3b srl e
+
+z80opc3b:	srlr	d2
+		jmp	z80emu1
+
+;	$3c srl h
+
+z80opc3c:	hsrlr	d1
+		jmp	z80emu1
+
+;	$3d srl l
+
+z80opc3d:	srlr	d1
+		jmp	z80emu1
+
+;	$3e srl (hl)
+
+z80opc3e:	move.b	0(a4,d1.w),d6
+		srlr	d6
+		move.b	d6,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$3f srl a
+
+z80opc3f:	srlr	d0
+		jmp	z80emu1
+
+;	$40 bit 0,b
+
+z80opc40:	bit	0,b
+		jmp	z80emu1
+
+;	$41 bit 0,c
+
+z80opc41:	bit	0,c
+		jmp	z80emu1
+
+;	$42 bit 0,d
+
+z80opc42:	bit	0,d
+		jmp	z80emu1
+
+;	$43 bit 0,e
+
+z80opc43:	bit	0,e
+		jmp	z80emu1
+
+;	$44 bit 0,h
+
+z80opc44:	bit	0,h
+		jmp	z80emu1
+
+;	$45 bit 0,l
+
+z80opc45:	bit	0,l
+		jmp	z80emu1
+
+;	$46 bit 0,(hl)
+
+z80opc46:	bit	0,(hl)
+		jmp	z80emu1
+
+;	$47 bit 0,a
+
+z80opc47:	bit	0,a
+		jmp	z80emu1
+
+;	$48 bit 1,b
+
+z80opc48:	bit	1,b
+		jmp	z80emu1
+
+;	$49 bit 1,c
+
+z80opc49:	bit	1,c
+		jmp	z80emu1
+
+;	$4a bit 1,d
+
+z80opc4a:	bit	1,d
+		jmp	z80emu1
+
+;	$4b bit 1,e
+
+z80opc4b:	bit	1,e
+		jmp	z80emu1
+
+;	$4c bit 1,h
+
+z80opc4c:	bit	1,h
+		jmp	z80emu1
+
+;	$4d bit 1,l
+
+z80opc4d:	bit	1,l
+		jmp	z80emu1
+
+;	$4e bit 1,(hl)
+
+z80opc4e:	bit	1,(hl)
+		jmp	z80emu1
+
+;	$4f bit 1,a
+
+z80opc4f:	bit	1,a
+		jmp	z80emu1
+
+;	$50 bit 2,b
+
+z80opc50:	bit	2,b
+		jmp	z80emu1
+
+;	$51 bit 2,c
+
+z80opc51:	bit	2,c
+		jmp	z80emu1
+
+;	$52 bit 2,d
+
+z80opc52:	bit	2,d
+		jmp	z80emu1
+
+;	$53 bit 2,e
+
+z80opc53:	bit	2,e
+		jmp	z80emu1
+
+;	$54 bit 2,h
+
+z80opc54:	bit	2,h
+		jmp	z80emu1
+
+;	$55 bit 2,l
+
+z80opc55:	bit	2,l
+		jmp	z80emu1
+
+;	$56 bit 2,(hl)
+
+z80opc56:	bit	2,(hl)
+		jmp	z80emu1
+
+;	$57 bit 2,a
+
+z80opc57:	bit	2,a
+		jmp	z80emu1
+
+;	$58 bit 3,b
+
+z80opc58:	bit	3,b
+		jmp	z80emu1
+
+;	$59 bit 3,c
+
+z80opc59:	bit	3,c
+		jmp	z80emu1
+
+;	$5a bit 3,d
+
+z80opc5a:	bit	3,d
+		jmp	z80emu1
+
+;	$5b bit 3,e
+
+z80opc5b:	bit	3,e
+		jmp	z80emu1
+
+;	$5c bit 3,h
+
+z80opc5c:	bit	3,h
+		jmp	z80emu1
+
+;	$5d bit 3,l
+
+z80opc5d:	bit	3,l
+		jmp	z80emu1
+
+;	$5e bit 3,(hl)
+
+z80opc5e:	bit	3,(hl)
+		jmp	z80emu1
+
+;	$5f bit 3,a
+
+z80opc5f:	bit	3,a
+		jmp	z80emu1
+
+;	$60 bit 4,b
+
+z80opc60:	bit	4,b
+		jmp	z80emu1
+
+;	$61 bit 4,c
+
+z80opc61:	bit	4,c
+		jmp	z80emu1
+
+;	$62 bit 4,d
+
+z80opc62:	bit	4,d
+		jmp	z80emu1
+
+;	$63 bit 4,e
+
+z80opc63:	bit	4,e
+		jmp	z80emu1
+
+;	$64 bit 4,h
+
+z80opc64:	bit	4,h
+		jmp	z80emu1
+
+;	$65 bit 4,l
+
+z80opc65:	bit	4,l
+		jmp	z80emu1
+
+;	$66 bit 4,(hl)
+
+z80opc66:	bit	4,(hl)
+		jmp	z80emu1
+
+;	$67 bit 4,a
+
+z80opc67:	bit	4,a
+		jmp	z80emu1
+
+;	$68 bit 5,b
+
+z80opc68:	bit	5,b
+		jmp	z80emu1
+
+;	$69 bit 5,c
+
+z80opc69:	bit	5,c
+		jmp	z80emu1
+
+;	$6a bit 5,d
+
+z80opc6a:	bit	5,d
+		jmp	z80emu1
+
+;	$6b bit 5,e
+
+z80opc6b:	bit	5,e
+		jmp	z80emu1
+
+;	$6c bit 5,h
+
+z80opc6c:	bit	5,h
+		jmp	z80emu1
+
+;	$6d bit 5,l
+
+z80opc6d:	bit	5,l
+		jmp	z80emu1
+
+;	$6e bit 5,(hl)
+
+z80opc6e:	bit	5,(hl)
+		jmp	z80emu1
+
+;	$6f bit 5,a
+
+z80opc6f:	bit	5,a
+		jmp	z80emu1
+
+;	$70 bit 6,b
+
+z80opc70:	bit	6,b
+		jmp	z80emu1
+
+;	$71 bit 6,c
+
+z80opc71:	bit	6,c
+		jmp	z80emu1
+
+;	$72 bit 6,d
+
+z80opc72:	bit	6,d
+		jmp	z80emu1
+
+;	$73 bit 6,e
+
+z80opc73:	bit	6,e
+		jmp	z80emu1
+
+;	$74 bit 6,h
+
+z80opc74:	bit	6,h
+		jmp	z80emu1
+
+;	$75 bit 6,l
+
+z80opc75:	bit	6,l
+		jmp	z80emu1
+
+;	$76 bit 6,(hl)
+
+z80opc76:	bit	6,(hl)
+		jmp	z80emu1
+
+;	$77 bit 6,a
+
+z80opc77:	bit	6,a
+		jmp	z80emu1
+
+;	$78 bit 7,b
+
+z80opc78:	bit	7,b
+		jmp	z80emu1
+
+;	$79 bit 7,c
+
+z80opc79:	bit	7,c
+		jmp	z80emu1
+
+;	$7a bit 7,d
+
+z80opc7a:	bit	7,d
+		jmp	z80emu1
+
+;	$7b bit 7,e
+
+z80opc7b:	bit	7,e
+		jmp	z80emu1
+
+;	$7c bit 7,h
+
+z80opc7c:	bit	7,h
+		jmp	z80emu1
+
+;	$7d bit 7,l
+
+z80opc7d:	bit	7,l
+		jmp	z80emu1
+
+;	$7e bit 7,(hl)
+
+z80opc7e:	bit	7,(hl)
+		jmp	z80emu1
+
+;	$7f bit 7,a
+
+z80opc7f:	bit	7,a
+		jmp	z80emu1
+
+;	$80 res 0,b
+
+z80opc80:	bclr.l	#8,d3
+		jmp	z80emu1
+
+;	$81 res 0,c
+
+z80opc81:	bclr.l	#0,d3
+		jmp	z80emu1
+
+;	$82 res 0,d
+
+z80opc82:	bclr.l	#8,d2
+		jmp	z80emu1
+
+;	$83 res 0,e
+
+z80opc83:	bclr.l	#0,d2
+		jmp	z80emu1
+
+;	$84 res 0,h
+
+z80opc84:	bclr.l	#8,d1
+		jmp	z80emu1
+
+;	$85 res 0,l
+
+z80opc85:	bclr.l	#0,d1
+		jmp	z80emu1
+
+;	$86 res 0,(hl)
+
+z80opc86:	bclr.b	#0,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$87 res 0,a
+
+z80opc87:	bclr.l	#0,d0
+		jmp	z80emu1
+
+;	$88 res 1,b
+
+z80opc88:	bclr.l	#9,d3
+		jmp	z80emu1
+
+;	$89 res 1,c
+
+z80opc89:	bclr.l	#1,d3
+		jmp	z80emu1
+
+;	$8a res 1,d
+
+z80opc8a:	bclr.l	#9,d2
+		jmp	z80emu1
+
+;	$8b res 1,e
+
+z80opc8b:	bclr.l	#1,d2
+		jmp	z80emu1
+
+;	$8c res 1,h
+
+z80opc8c:	bclr.l	#9,d1
+		jmp	z80emu1
+
+;	$8d res 1,l
+
+z80opc8d:	bclr.l	#1,d1
+		jmp	z80emu1
+
+;	$8e res 1,(hl)
+
+z80opc8e:	bclr.b	#1,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$8f res 1,a
+
+z80opc8f:	bclr.l	#1,d0
+		jmp	z80emu1
+
+;	$90 res 2,b
+
+z80opc90:	bclr.l	#10,d3
+		jmp	z80emu1
+
+;	$91 res 2,c
+
+z80opc91:	bclr.l	#2,d3
+		jmp	z80emu1
+
+;	$92 res 2,d
+
+z80opc92:	bclr.l	#10,d2
+		jmp	z80emu1
+
+;	$93 res 2,e
+
+z80opc93:	bclr.l	#2,d2
+		jmp	z80emu1
+
+;	$94 res 2,h
+
+z80opc94:	bclr.l	#10,d1
+		jmp	z80emu1
+
+;	$95 res 2,l
+
+z80opc95:	bclr.l	#2,d1
+		jmp	z80emu1
+
+;	$96 res 2,(hl)
+
+z80opc96:	bclr.b	#2,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$97 res 2,a
+
+z80opc97:	bclr.l	#2,d0
+		jmp	z80emu1
+
+;	$98 res 3,b
+
+z80opc98:	bclr.l	#11,d3
+		jmp	z80emu1
+
+;	$99 res 3,c
+
+z80opc99:	bclr.l	#3,d3
+		jmp	z80emu1
+
+;	$9a res 3,d
+
+z80opc9a:	bclr.l	#11,d2
+		jmp	z80emu1
+
+;	$9b res 3,e
+
+z80opc9b:	bclr.l	#3,d2
+		jmp	z80emu1
+
+;	$9c res 3,h
+
+z80opc9c:	bclr.l	#11,d1
+		jmp	z80emu1
+
+;	$9d res 3,l
+
+z80opc9d:	bclr.l	#3,d1
+		jmp	z80emu1
+
+;	$9e res 3,(hl)
+
+z80opc9e:	bclr.b	#3,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$9f res 3,a
+
+z80opc9f:	bclr.l	#3,d0
+		jmp	z80emu1
+
+;	$a0 res 4,b
+
+z80opca0:	bclr.l	#12,d3
+		jmp	z80emu1
+
+;	$a1 res 4,c
+
+z80opca1:	bclr.l	#4,d3
+		jmp	z80emu1
+
+;	$a2 res 4,d
+
+z80opca2:	bclr.l	#12,d2
+		jmp	z80emu1
+
+;	$a3 res 4,e
+
+z80opca3:	bclr.l	#4,d2
+		jmp	z80emu1
+
+;	$a4 res 4,h
+
+z80opca4:	bclr.l	#12,d1
+		jmp	z80emu1
+
+;	$a5 res 4,l
+
+z80opca5:	bclr.l	#4,d1
+		jmp	z80emu1
+
+;	$a6 res 4,(hl)
+
+z80opca6:	bclr.b	#4,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$a7 res 4,a
+
+z80opca7:	bclr.l	#4,d0
+		jmp	z80emu1
+
+;	$a8 res 5,b
+
+z80opca8:	bclr.l	#13,d3
+		jmp	z80emu1
+
+;	$a9 res 5,c
+
+z80opca9:	bclr.l	#5,d3
+		jmp	z80emu1
+
+;	$aa res 5,d
+
+z80opcaa:	bclr.l	#13,d2
+		jmp	z80emu1
+
+;	$ab res 5,e
+
+z80opcab:	bclr.l	#5,d2
+		jmp	z80emu1
+
+;	$ac res 5,h
+
+z80opcac:	bclr.l	#13,d1
+		jmp	z80emu1
+
+;	$ad res 5,l
+
+z80opcad:	bclr.l	#5,d1
+		jmp	z80emu1
+
+;	$ae res 5,(hl)
+
+z80opcae:	bclr.b	#5,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$af res 5,a
+
+z80opcaf:	bclr.l	#5,d0
+		jmp	z80emu1
+
+;	$b0 res 6,b
+
+z80opcb0:	bclr.l	#14,d3
+		jmp	z80emu1
+
+;	$b1 res 6,c
+
+z80opcb1:	bclr.l	#6,d3
+		jmp	z80emu1
+
+;	$b2 res 6,d
+
+z80opcb2:	bclr.l	#14,d2
+		jmp	z80emu1
+
+;	$b3 res 6,e
+
+z80opcb3:	bclr.l	#6,d2
+		jmp	z80emu1
+
+;	$74 res 6,h
+
+z80opcb4:	bclr.l	#14,d1
+		jmp	z80emu1
+
+;	$b5 res 6,l
+
+z80opcb5:	bclr.l	#6,d1
+		jmp	z80emu1
+
+;	$b6 res 6,(hl)
+
+z80opcb6:	bclr.b	#6,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$b7 res 6,a
+
+z80opcb7:	bclr.l	#6,d0
+		jmp	z80emu1
+
+;	$b8 res 7,b
+
+z80opcb8:	bclr.l	#15,d3
+		jmp	z80emu1
+
+;	$b9 res 7,c
+
+z80opcb9:	bclr.l	#7,d3
+		jmp	z80emu1
+
+;	$ba res 7,d
+
+z80opcba:	bclr.l	#15,d2
+		jmp	z80emu1
+
+;	$bb res 7,e
+
+z80opcbb:	bclr.l	#7,d2
+		jmp	z80emu1
+
+;	$bc res 7,h
+
+z80opcbc:	bclr.l	#15,d1
+		jmp	z80emu1
+
+;	$bd res 7,l
+
+z80opcbd:	bclr.l	#7,d1
+		jmp	z80emu1
+
+;	$be res 7,(hl)
+
+z80opcbe:	bclr.b	#7,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$bf res 7,a
+
+z80opcbf:	bclr.l	#7,d0
+		jmp	z80emu1
+
+;	$c0 set 0,b
+
+z80opcc0:	bset.l	#8,d3
+		jmp	z80emu1
+
+;	$c1 set 0,c
+
+z80opcc1:	bset.l	#0,d3
+		jmp	z80emu1
+
+;	$c2 set 0,d
+
+z80opcc2:	bset.l	#8,d2
+		jmp	z80emu1
+
+;	$c3 set 0,e
+
+z80opcc3:	bset.l	#0,d2
+		jmp	z80emu1
+
+;	$c4 set 0,h
+
+z80opcc4:	bset.l	#8,d1
+		jmp	z80emu1
+
+;	$c5 set 0,l
+
+z80opcc5:	bset.l	#0,d1
+		jmp	z80emu1
+
+;	$c6 set 0,(hl)
+
+z80opcc6:	bset.b	#0,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$c7 set 0,a
+
+z80opcc7:	bset.l	#0,d0
+		jmp	z80emu1
+
+;	$c8 set 1,b
+
+z80opcc8:	bset.l	#9,d3
+		jmp	z80emu1
+
+;	$c9 set 1,c
+
+z80opcc9:	bset.l	#1,d3
+		jmp	z80emu1
+
+;	$ca set 1,d
+
+z80opcca:	bset.l	#9,d2
+		jmp	z80emu1
+
+;	$cb set 1,e
+
+z80opccb1:	bset.l	#1,d2
+		jmp	z80emu1
+
+;	$cc set 1,h
+
+z80opccc:	bset.l	#9,d1
+		jmp	z80emu1
+
+;	$cd set 1,l
+
+z80opccd:	bset.l	#1,d1
+		jmp	z80emu1
+
+;	$ce set 1,(hl)
+
+z80opcce:	bset.b	#1,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$cf set 1,a
+
+z80opccf:	bset.l	#1,d0
+		jmp	z80emu1
+
+;	$d0 set 2,b
+
+z80opcd0:	bset.l	#10,d3
+		jmp	z80emu1
+
+;	$d1 set 2,c
+
+z80opcd1:	bset.l	#2,d3
+		jmp	z80emu1
+
+;	$d2 set 2,d
+
+z80opcd2:	bset.l	#10,d2
+		jmp	z80emu1
+
+;	$d3 set 2,e
+
+z80opcd3:	bset.l	#2,d2
+		jmp	z80emu1
+
+;	$d4 set 2,h
+
+z80opcd4:	bset.l	#10,d1
+		jmp	z80emu1
+
+;	$d5 set 2,l
+
+z80opcd5:	bset.l	#2,d1
+		jmp	z80emu1
+
+;	$d6 set 2,(hl)
+
+z80opcd6:	bset.b	#2,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$d7 set 2,a
+
+z80opcd7:	bset.l	#2,d0
+		jmp	z80emu1
+
+;	$d8 set 3,b
+
+z80opcd8:	bset.l	#11,d3
+		jmp	z80emu1
+
+;	$d9 set 3,c
+
+z80opcd9:	bset.l	#3,d3
+		jmp	z80emu1
+
+;	$da set 3,d
+
+z80opcda:	bset.l	#11,d2
+		jmp	z80emu1
+
+;	$db set 3,e
+
+z80opcdb:	bset.l	#3,d2
+		jmp	z80emu1
+
+;	$dc set 3,h
+
+z80opcdc:	bset.l	#11,d1
+		jmp	z80emu1
+
+;	$dd set 3,l
+
+z80opcdd:	bset.l	#3,d1
+		jmp	z80emu1
+
+;	$de set 3,(hl)
+
+z80opcde:	bset.b	#3,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$df set 3,a
+
+z80opcdf:	bset.l	#3,d0
+		jmp	z80emu1
+
+;	$e0 set 4,b
+
+z80opce0:	bset.l	#12,d3
+		jmp	z80emu1
+
+;	$e1 set 4,c
+
+z80opce1:	bset.l	#4,d3
+		jmp	z80emu1
+
+;	$e2 set 4,d
+
+z80opce2:	bset.l	#12,d2
+		jmp	z80emu1
+
+;	$e3 set 4,e
+
+z80opce3:	bset.l	#4,d2
+		jmp	z80emu1
+
+;	$e4 set 4,h
+
+z80opce4:	bset.l	#12,d1
+		jmp	z80emu1
+
+;	$e5 set 4,l
+
+z80opce5:	bclr.l	#4,d1
+		jmp	z80emu1
+
+;	$e6 set 4,(hl)
+
+z80opce6:	bset.b	#4,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$e7 set 4,a
+
+z80opce7:	bset.l	#4,d0
+		jmp	z80emu1
+
+;	$e8 set 5,b
+
+z80opce8:	bset.l	#13,d3
+		jmp	z80emu1
+
+;	$e9 set 5,c
+
+z80opce9:	bset.l	#5,d3
+		jmp	z80emu1
+
+;	$ea set 5,d
+
+z80opcea:	bset.l	#13,d2
+		jmp	z80emu1
+
+;	$eb set 5,e
+
+z80opceb:	bset.l	#5,d2
+		jmp	z80emu1
+
+;	$ec set 5,h
+
+z80opcec:	bset.l	#13,d1
+		jmp	z80emu1
+
+;	$ed set 5,l
+
+z80opced:	bset.l	#5,d1
+		jmp	z80emu1
+
+;	$ee set 5,(hl)
+
+z80opcee:	bset.b	#5,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$ef set 5,a
+
+z80opcef:	bset.l	#5,d0
+		jmp	z80emu1
+
+;	$f0 set 6,b
+
+z80opcf0:	bset.l	#14,d3
+		jmp	z80emu1
+
+;	$f1 set 6,c
+
+z80opcf1:	bset.l	#6,d3
+		jmp	z80emu1
+
+;	$f2 set 6,d
+
+z80opcf2:	bset.l	#14,d2
+		jmp	z80emu1
+
+;	$f3 set 6,e
+
+z80opcf3:	bset.l	#6,d2
+		jmp	z80emu1
+
+;	$f4 set 6,h
+
+z80opcf4:	bset.l	#14,d1
+		jmp	z80emu1
+
+;	$f5 set 6,l
+
+z80opcf5:	bset.l	#6,d1
+		jmp	z80emu1
+
+;	$f6 set 6,(hl)
+
+z80opcf6:	bset.b	#6,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$f7 set 6,a
+
+z80opcf7:	bset.l	#6,d0
+		jmp	z80emu1
+
+;	$f8 set 7,b
+
+z80opcf8:	bset.l	#15,d3
+		jmp	z80emu1
+
+;	$f9 set 7,c
+
+z80opcf9:	bset.l	#7,d3
+		jmp	z80emu1
+
+;	$fa set 7,d
+
+z80opcfa:	bset.l	#15,d2
+		jmp	z80emu1
+
+;	$fb set 7,e
+
+z80opcfb:	bset.l	#7,d2
+		jmp	z80emu1
+
+;	$fc set 7,h
+
+z80opcfc:	bset.l	#15,d1
+		jmp	z80emu1
+
+;	$fd set 7,l
+
+z80opcfd:	bset.l	#7,d1
+		jmp	z80emu1
+
+;	$fe set 7,(hl)
+
+z80opcfe:	bset.b	#7,0(a4,d1.w)
+		jmp	z80emu1
+
+;	$ff set 7,a
+
+z80opcff:	bset.l	#7,d0
+		jmp	z80emu1
+
+;	data area
+;	initialized data area
+
+;	address table for z80 second opcode $cb
+
+z80opctabcb:	dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc10			;$10
+		dc.l  z80opc11
+		dc.l  z80opc12
+		dc.l  z80opc13
+		dc.l  z80opc14
+		dc.l  z80opc15
+		dc.l  z80opc16
+		dc.l  z80opc17
+		dc.l  z80opc18
+		dc.l  z80opc19
+		dc.l  z80opc1a
+		dc.l  z80opc1b
+		dc.l  z80opc1c
+		dc.l  z80opc1d
+		dc.l  z80opc1e
+		dc.l  z80opc1f
+		dc.l  z80opc20			;$20
+		dc.l  z80opc21
+		dc.l  z80opc22
+		dc.l  z80opc23
+		dc.l  z80opc24
+		dc.l  z80opc25
+		dc.l  z80opc26
+		dc.l  z80opc27
+		dc.l  z80opc28
+		dc.l  z80opc29
+		dc.l  z80opc2a
+		dc.l  z80opc2b
+		dc.l  z80opc2c
+		dc.l  z80opc2d
+		dc.l  z80opc2e
+		dc.l  z80opc2f
+		dc.l  z80emuni			;$30
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc38
+		dc.l  z80opc39
+		dc.l  z80opc3a
+		dc.l  z80opc3b
+		dc.l  z80opc3c
+		dc.l  z80opc3d
+		dc.l  z80opc3e
+		dc.l  z80opc3f
+		dc.l  z80opc40			;$40
+		dc.l  z80opc41
+		dc.l  z80opc42
+		dc.l  z80opc43
+		dc.l  z80opc44
+		dc.l  z80opc45
+		dc.l  z80opc46
+		dc.l  z80opc47
+		dc.l  z80opc48
+		dc.l  z80opc49
+		dc.l  z80opc4a
+		dc.l  z80opc4b
+		dc.l  z80opc4c
+		dc.l  z80opc4d
+		dc.l  z80opc4e
+		dc.l  z80opc4f
+		dc.l  z80opc50			;$50
+		dc.l  z80opc51
+		dc.l  z80opc52
+		dc.l  z80opc53
+		dc.l  z80opc54
+		dc.l  z80opc55
+		dc.l  z80opc56
+		dc.l  z80opc57
+		dc.l  z80opc58
+		dc.l  z80opc59
+		dc.l  z80opc5a
+		dc.l  z80opc5b
+		dc.l  z80opc5c
+		dc.l  z80opc5d
+		dc.l  z80opc5e
+		dc.l  z80opc5f
+		dc.l  z80opc60			;$60
+		dc.l  z80opc61
+		dc.l  z80opc62
+		dc.l  z80opc63
+		dc.l  z80opc64
+		dc.l  z80opc65
+		dc.l  z80opc66
+		dc.l  z80opc67
+		dc.l  z80opc68
+		dc.l  z80opc69
+		dc.l  z80opc6a
+		dc.l  z80opc6b
+		dc.l  z80opc6c
+		dc.l  z80opc6d
+		dc.l  z80opc6e
+		dc.l  z80opc6f
+		dc.l  z80opc70			;$70
+		dc.l  z80opc71
+		dc.l  z80opc72
+		dc.l  z80opc73
+		dc.l  z80opc74
+		dc.l  z80opc75
+		dc.l  z80opc76
+		dc.l  z80opc77
+		dc.l  z80opc78
+		dc.l  z80opc79
+		dc.l  z80opc7a
+		dc.l  z80opc7b
+		dc.l  z80opc7c
+		dc.l  z80opc7d
+		dc.l  z80opc7e
+		dc.l  z80opc7f
+		dc.l  z80opc80			;$80
+		dc.l  z80opc81
+		dc.l  z80opc82
+		dc.l  z80opc83
+		dc.l  z80opc84
+		dc.l  z80opc85
+		dc.l  z80opc86
+		dc.l  z80opc87
+		dc.l  z80opc88
+		dc.l  z80opc89
+		dc.l  z80opc8a
+		dc.l  z80opc8b
+		dc.l  z80opc8c
+		dc.l  z80opc8d
+		dc.l  z80opc8e
+		dc.l  z80opc8f
+		dc.l  z80opc90			;$90
+		dc.l  z80opc91
+		dc.l  z80opc92
+		dc.l  z80opc93
+		dc.l  z80opc94
+		dc.l  z80opc95
+		dc.l  z80opc96
+		dc.l  z80opc97
+		dc.l  z80opc98
+		dc.l  z80opc99
+		dc.l  z80opc9a
+		dc.l  z80opc9b
+		dc.l  z80opc9c
+		dc.l  z80opc9d
+		dc.l  z80opc9e
+		dc.l  z80opc9f
+		dc.l  z80opca0			;$a0
+		dc.l  z80opca1
+		dc.l  z80opca2
+		dc.l  z80opca3
+		dc.l  z80opca4
+		dc.l  z80opca5
+		dc.l  z80opca6
+		dc.l  z80opca7
+		dc.l  z80opca8
+		dc.l  z80opca9
+		dc.l  z80opcaa
+		dc.l  z80opcab
+		dc.l  z80opcac
+		dc.l  z80opcad
+		dc.l  z80opcae
+		dc.l  z80opcaf
+		dc.l  z80opcb0			;$b0
+		dc.l  z80opcb1
+		dc.l  z80opcb2
+		dc.l  z80opcb3
+		dc.l  z80opcb4
+		dc.l  z80opcb5
+		dc.l  z80opcb6
+		dc.l  z80opcb7
+		dc.l  z80opcb8
+		dc.l  z80opcb9
+		dc.l  z80opcba
+		dc.l  z80opcbb
+		dc.l  z80opcbc
+		dc.l  z80opcbd
+		dc.l  z80opcbe
+		dc.l  z80opcbf
+		dc.l  z80opcc0			;$c0
+		dc.l  z80opcc1
+		dc.l  z80opcc2
+		dc.l  z80opcc3
+		dc.l  z80opcc4
+		dc.l  z80opcc5
+		dc.l  z80opcc6
+		dc.l  z80opcc7
+		dc.l  z80opcc8
+		dc.l  z80opcc9
+		dc.l  z80opcca
+		dc.l  z80opccb1 		;opcode $cb already used
+		dc.l  z80opccc
+		dc.l  z80opccd
+		dc.l  z80opcce
+		dc.l  z80opccf
+		dc.l  z80opcd0			;$d0
+		dc.l  z80opcd1
+		dc.l  z80opcd2
+		dc.l  z80opcd3
+		dc.l  z80opcd4
+		dc.l  z80opcd5
+		dc.l  z80opcd6
+		dc.l  z80opcd7
+		dc.l  z80opcd8
+		dc.l  z80opcd9
+		dc.l  z80opcda
+		dc.l  z80opcdb
+		dc.l  z80opcdc
+		dc.l  z80opcdd
+		dc.l  z80opcde
+		dc.l  z80opcdf
+		dc.l  z80opce0			;$e0
+		dc.l  z80opce1
+		dc.l  z80opce2
+		dc.l  z80opce3
+		dc.l  z80opce4
+		dc.l  z80opce5
+		dc.l  z80opce6
+		dc.l  z80opce7
+		dc.l  z80opce8
+		dc.l  z80opce9
+		dc.l  z80opcea
+		dc.l  z80opceb
+		dc.l  z80opcec
+		dc.l  z80opced
+		dc.l  z80opcee
+		dc.l  z80opcef
+		dc.l  z80opcf0			;$f0
+		dc.l  z80opcf1
+		dc.l  z80opcf2
+		dc.l  z80opcf3
+		dc.l  z80opcf4
+		dc.l  z80opcf5
+		dc.l  z80opcf6
+		dc.l  z80opcf7
+		dc.l  z80opcf8
+		dc.l  z80opcf9
+		dc.l  z80opcfa
+		dc.l  z80opcfb
+		dc.l  z80opcfc
+		dc.l  z80opcfd
+		dc.l  z80opcfe
+		dc.l  z80opcff
+
+;	debug count instruction
+
+cntinst:	addq.l	#1,a0
+
+		end
+
+
+
+

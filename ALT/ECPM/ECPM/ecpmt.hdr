@@ -1,0 +1,7 @@
+* simcpmt.hdr
+
+* Include this file to produce the trace version of simcpm2.
+
+tracehd	equ	1	;Anything to satisfy IFD
+
+* End of simcpmt.hdr

@@ -1,0 +1,27 @@
+#!/bin/sh
+#
+# Script to convert a binary file to an embedded C block of unsigned chars.
+# Under DNIX we just use coffwrap, quick and easy.  But it's not portable.
+# Coffwrap takes 0.08 seconds to wrap up WS.COM, bintoc/cc takes 51 seconds.
+#
+# This script is complicated by the fact that od, a very old program, has
+# apparently evolved, so the same options don't work everywhere.  We have
+# to try a few variations to find one that works right.
+#
+# Usage: bintoc path_to_file symbol_basename >foo.c
+#
+echo "char $2_name[13] = {\"`basename $1`\"};"
+if [ -x /bin/coffwrap ] ; then
+  coffwrap -t -n _$2 $1 $2.o
+  echo "extern unsigned char $2[];"
+  ls -l $1 | read -u a b c d size rest;
+  echo "int $2_size = $size;"
+else
+  echo "unsigned char $2[] = {"
+  (od -bv || od -ab) <$1 2>/dev/null \
+	  | tr '\011' '\040' \
+	  | sed -e 's/^[0-7]*//' -e '/^$/d' -e 's/^[ ]*/0/' -e 's/[ ]*$//' \
+	  | sed -e 's/ /, 0/g' -e 's/$/,/' -e '$s/,$//' -e 's/^/	/'
+  echo "};"
+  echo "int $2_size = sizeof $2;"
+fi

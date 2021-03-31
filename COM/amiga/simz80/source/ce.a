@@ -1,0 +1,3014 @@
+;	CP/M and terminal emulator for Amiga
+;	for z80 emulator
+
+cever		dc.b	'Ce    Ver: 00090   Date: 03-Oct-88 19:57:44 ',0
+
+;	This source code is released into the public domain for
+;	non-profit use only.
+;	Copyright (C) 1988, Ulf Nordquist. All Rights Reserved !
+;	Ulf Nordquist
+;	Brunnehagen 36
+;	417 47 Gothenburg
+;	Sweden
+
+;	History
+;	871110 : osinit
+;		 osentry, jumptable for bdos & bios but no functions
+;	871114 : conwin
+;		 console device
+;		 bdos06
+;	871117 : sizing for console window
+;		 escape sequence decoding in bdos06
+;	871118 : esc seq $3d,$4c in bdos06
+;	871121 : msg port for console device
+;	871122 : set up stack and pc in osinit
+;		 oserr6 + errors report function no. in d6
+;	871203 : osrun (ccp)
+;		 conchk conwait
+;	871213 : bios03
+;		 command tail buffer in ccp
+;	871214 : fcb1 & fcb2 setup
+;	871217 : error texts
+;		 bdos09
+;	871219 : bios06,09,0c
+;	871220 : bdos01,02,10,11
+;		 clean up console status check/in/out routines
+;		 getclin
+;	871222 : bdos12
+;	880111 : bdos15
+;	880117 : bdos20
+;	880119 : bug1 a=l & b=h at return from bdos
+;		 real bios jump table
+;	880205 : bug2 when waiting for chraracters from console
+;	880208 : bdos17, 26
+;	880221 : bdos18, 25
+;	880224 : esc seq $27, $28, $2b, $2c, $4b
+;		 bdos13, 14
+;		 choice of error at undefined escape sequence
+;	880226 : bdos31 & dpb
+;		 bdos27 & alloc
+;		 try to set up file size in bdos17 & 18
+;	880227 : change osinit to allow more than one call and move it to
+;		   osrun
+;		 $1a as clear screen to terminal
+;	880311 ; resident command dir, type
+;		 serfir, sernxt
+;		 log to file in conout
+;	880312 : log to file via logbuf
+;	880313 : serfir/nxt widcard in ex
+;	880430 : ver 00001
+;	880529 : reqstr
+;	880531 : openlog asks for file name
+;	880714 : bdos33
+;		 bug3 update lastpos if repos in bdos20
+;		 bdos16
+;		 allow transient to open more than one file (5 for now)
+;	880715 : console window is borderless
+;		 remove windowsizing fron console window and make it
+;		   max height direct
+;	880816 : bug4 in cursor pos, add 1
+;		 chk if file already open in bdos15
+;	880822 : sizeable window during debug (Curse of the 512k Amiga)
+;	880909 : ActivateGadget in reqstr
+;		 bdos00,19,21,22,34
+;		 bios0f,2d
+;	880912 : bdos32,23,36
+;		 ^C in getclin
+;	880913 : start message in console window
+;	880914 : oserr8
+;	880915 : count bios & bdos calls
+;	880918 : possible to load program to tpa bigger than $7ff0
+;		 bug5 when read or write via bdos over $8000 boundry
+;	880924 : really corrected bug5
+;		 resident command era
+;	880929 : change console window height and change BorderTop in struct
+;		 to get 80x24 in 200 pixels
+
+;	Differences and limitations in emulation (as many as I can think of)
+;	unimplemented  functions
+;	       resident commands : ren
+;	       bdos : 03,04,05,07,08,13,14,24
+;		      28,29,30,35,37,40
+;	       bios : 00,12,15,18,1b,1e,21,24,27,2a,30
+;	dir    no wildcards supported
+;	bdos15 (Open file) sets cr in fcb to 0 (to work with zsid) and
+;	       same with ex (for symmetry (or whatever)). Always returns
+;	       directory code 0 if successful
+;	bdos16 (Close file) always returns directory code 0 if successful
+;	bdos17 (Search for first) sets directory entry to 0, except for name,
+;	       ex and rc. Wildcard only supported in ex, always gets first
+;	       file in directory. Always returns directory code 0 if
+;	       successful.
+;	bdos18 (Search for next) same limitations as bdos17, except gets
+;	       next file in directory
+;	bdos19 (Delete file) always returns directory code 0 if successful
+;	bdos20 (Read sequential) always returns directory code 0 if
+;	       successful
+;	bdos21 (Write sequential) always returns directory code 0 if
+;	       successful
+;	bdos22 (Make file) always returns directory code 0 if successful
+;	bdos2  (Rename file) always returns directory code 0 if successful
+;	bdos27 (Get adddr(alloc)) the vector is wrong when used disk size is
+;	       less than directory size (cks*recsiz)
+;	bdos32 (Set/get user code) always return 0, cannot set
+;	bdos33 (Read random) returns $ff if error
+;	bdos34 (Write random) returns $ff if error
+;	bios0f (List) recognized but ignored
+;	bios2d (Listst) will always return 0
+;	ccp    (and bdos10) uses bs & cr for its expected use, ^C first in
+;	       the line restart cpm, all other control codes is sent to user
+;	maximum of five files open by transient
+;	only user 0 is supported
+;	not possible to change default drive
+;	virtual terminal is adm3a (bdos02 06 09)
+;	       --- implemented escape sequences ---
+;	       27			: start inverse video
+;	       28			: end inverse video
+;	       2b			: end reduced intensity (ignored)
+;	       2c			: start reduced intensity (ignored)
+;	       3d<line+$20><column+$20> : position cursor
+;	       4b			: erase to end of line
+;	       4c			: clear and home
+;	       --- implemented control codes ---
+;	       1a			: clear screen
+
+;	program area is $10000 bytes, logical start is at start+$8000
+;	logical start is $0000 for the processor
+
+;	map over program area (logical addresses)  CP/M standard address
+;	$0000-$00ff	system parameters		   BOOT:
+;	$0100-$feff	transient program area		   TBASE:
+;	$fe00-$feff	bdos jump			   FBASE:
+;	$ff00-$ff7f	bios jump table
+;	$ff80-$ffff	disk parameter block, allocation vector
+
+;	globals from this module
+
+		xdef	cever
+		xdef	closelog
+		xdef	comdata
+		xdef	conchk
+		xdef	conmsgpsb
+		xdef	conout1
+		xdef	conwin
+		xdef	dbgconwin
+		xdef	inpbuftab
+		xdef	inppmttab
+		xdef	newline
+		xdef	openlog
+		xdef	osclose
+		xdef	osentry
+		xdef	osrun
+		xdef	reqstr
+
+;	externals from cz
+
+		xref	conwinptr
+		xref	error2
+		xref	error4
+		xref	error5
+		xref	error6
+		xref	genntxt
+		xref	gg_GadgetID
+		xref	gg_NextGadget
+		xref	gg_SpecialInfo
+		xref	gg_TopEdge
+		xref	glflgs
+		xref	im_Class
+		xref	im_IAddress
+		xref	intbase
+		xref	minpeh
+		xref	MP_SIGBIT
+		xref	osexit
+		xref	wd_RPort
+		xref	wd_Size
+		xref	wd_UserPort
+		xref	winbp
+		xref	windp
+		xref	winmnh
+		xref	winmxh
+		xref	winmnw
+		xref	winmxw
+		xref	xalloc
+		xref	z80pc
+		xref	z80pgmptr
+		xref	z80sp
+
+;	externals from zek
+
+		xref	bdosoffs
+		xref	biosoffs
+		xref	cntbuf
+		xref	emucall
+		xref	emuret
+		xref	stoptrc
+
+;	externals from mystartup
+
+		xref	_DOSBase
+		xref	_SysBase
+
+;	externals from dos.library
+
+		xref	_LVOClose
+		xref	_LVODeleteFile
+		xref	_LVOExamine
+		xref	_LVOExNext
+		xref	_LVOInfo
+		xref	_LVOLock
+		xref	_LVOOpen
+		xref	_LVORead
+		xref	_LVORename
+		xref	_LVOSeek
+		xref	_LVOUnLock
+		xref	_LVOWrite
+
+;	externals from exec.library
+
+		xref	_LVOAddPort
+		xref	_LVOAllocSignal
+		xref	_LVOCloseDevice
+		xref	_LVODoIO
+		xref	_LVOFindTask
+		xref	_LVOFreeSignal
+		xref	_LVOGetMsg
+		xref	_LVOOpenDevice
+		xref	_LVORemPort
+		xref	_LVOReplyMsg
+		xref	_LVOSendIO
+		xref	_LVOWait
+
+;	externals from intuition.library
+
+_LVOActivateGadget equ	-$1ce		;($fe32) I have an 1.1 amiga.lib
+		xref	_LVOCloseWindow
+		xref	_LVOOpenWindow
+
+;	equates
+;	include/graphics/rastport.i
+
+RP_JAM1 	equ	0
+RP_JAM2 	equ	1
+
+;	include/intuition.i
+
+ACTIVATE	equ	$1000
+BOOLGADGET	equ	$0001
+BORDERLESS	equ	$0800
+GADGETUP	equ	$00000040
+GADGHCOMP	equ	$0000
+GRELBOTTOM	equ	$0008
+NOCAREREFRESH	equ	$00020000
+RELVERIFY	equ	$0001
+SELECTED	equ	$0080
+SMART_REFRESH	equ	$0000
+STRGADGET	equ	$0004
+WBENCHSCREEN	equ	$0001
+WINDOWDEPTH	equ	$0004
+WINDOWDRAG	equ	$0002
+WINDOWSIZING	equ	$0001
+
+;	StringInfo structure
+
+si_Buffer	equ 0
+si_UndoBuffer	equ 4
+si_BufferPos	equ 8
+si_MaxChars	equ 10
+si_DispPos	equ 12
+si_UndoPos	equ 14
+si_NumChars	equ 16
+si_DispCount	equ 18
+si_CLeft	equ 20
+si_CTop 	equ 22
+si_LayerPtr	equ 24
+si_LongInt	equ 28
+si_AltKeyMap	equ 32
+si_SIZEOF	equ 36
+
+;	NewWindow structure
+
+nw_LeftEdge	equ 0
+nw_TopEdge	equ 2
+nw_Width	equ 4
+nw_Height	equ 6
+nw_DetailPen	equ 8
+nw_BlockPen	equ 9
+nw_IDCMPFlags	equ 10
+nw_Flags	equ 14
+nw_FirstGadget	equ 18
+nw_CheckMark	equ 22
+nw_Title	equ 26
+nw_Screen	equ 30
+nw_BitMap	equ 34
+nw_MinWidth	equ 38
+nw_MinHeight	equ 40
+nw_MaxWidth	equ 42
+nw_MaxHeight	equ 44
+nw_Type 	equ 46
+nw_SIZE 	equ 48
+
+;	window struct
+
+wd_BorderTop	equ	13*4+2+1
+
+;	include/libraries/dos.i
+
+ACCESS_READ	equ	-2
+MODE_NEWFILE	equ	1006
+MODE_OLDFILE	equ	1005
+OFFSET_BEGINNING equ	-1
+OFFSET_CURRENT	equ	0
+
+;	DateStamp structure
+
+ds_Days 	equ	0	;Number of days since Jan. 1, 1978
+ds_Minute	equ	4	;Number of minutes past midnight
+ds_Tick 	equ	8	;Number of ticks past minute
+ds_SIZEOF	equ	12
+
+;	FileInfoBlock structure
+
+fib_DiskKey	equ	0
+fib_DirEntryType equ	4	;Type of Directory. If <0 file, if > 0 dir
+fib_FileName	equ	8	;Null terminated. Max 30 chars used for now
+fib_Protection	equ	116	;bit mask of protection, rwxd are 3-0
+fib_EntryType	equ	120
+fib_Size	equ	124	;Number of bytes in file
+fib_NumBlocks	equ	128	;Number of blocks in file
+fib_DateStamp	equ	132	;Date file last changed
+fib_Comment	equ	144	;Null terminated. Comment associated with file
+fib_SIZEOF	equ	260
+
+;	InfoData structure
+
+id_NumSoftErrors equ	0	;number of soft errors on disk
+id_UnitNumber	 equ	4	;Which unit disk is (was) mounted on
+id_DiskState	 equ	8	;See defines below
+id_NumBlocks	 equ	12	;Number of blocks on disk
+id_NumBlocksUsed equ	16	;Number of block in use
+id_BytesPerBlock equ	20
+id_DiskType	 equ	24	;Disk Type code
+id_VolumeNode	 equ	28	;BCPL pointer to volume node
+id_InUse	 equ	32	;Flag, zero if not in use
+id_SIZEOF	 equ	36
+
+;	include/exec/io.i
+
+CMD_READ	equ	2
+CMD_WRITE	equ	3
+NT_MSGPORT	equ	4
+PA_SIGNAL	equ	0
+
+;	for cpm program area
+
+bios		equ	$ff00
+biosentry	equ	$40		;log addr to bios spec opcode (low)
+bioshi		equ	$ff
+bioslo		equ	$00		;logical address to bios jump table
+biostl		equ	3		;length of one bios table entry
+ccpbufpos	equ	$80		;ccp buffer position
+dpb		equ	$ff80		;disk parameter block
+defdma		equ	$80		;default file dma address
+defdrv		equ	0		;default drive A:
+fbase		equ	$fe00
+fbasehi 	equ	$fe
+fbaselo 	equ	$00		;logical adress to FBASE:
+iobyte		equ	%10010101	;intel standard iobyte
+					;list is assigned to line printer
+					;punch is assigned to high speed puncher
+					;reader is assigned to high speed reader
+					;console is assigned to crt
+tbase:		equ	$100		;logical address to TBASE
+
+;	references backward
+
+alloc		equ	dpb+15+2
+ccpbuflen	equ	tbase-ccpbufpos ;ccp buffer length (pos here)
+
+;	for fcb
+
+fcb1		equ	$5c		;default fcb start
+fcb2		equ	$6c		;2:nd fcb, used only by ccp
+fcbex		equ	$68		;fcb1 current extent 0-31
+fcbs1		equ	$69		;fcb1 s1
+fcbs2		equ	$6a		;fcb1 s2
+fcbrc		equ	$6b		;fcb1 record count 0-127
+fcbd0		equ	$6c		;fcb1 d0
+fcbcr		equ	$7c		;fcb1 current record
+fcbr0		equ	$7d		;fcb1 random record lsb
+fcbr1		equ	$7e		;fcb1 random record
+fcbr2		equ	$7f		;fcb1 random record msb
+
+;	for dpb
+;	BLS*(DSM+1)=901120, total bytes per disk
+;	set BLS=2048 -> DSM=901120/BLS-1=439, BSH=4, BLM=15, EXM=0
+;	set DRM=255  -> AL0=%11110000, AL1=0, CKS=64
+
+blsiz		equ	2048			;BLS, cpm block size
+dirsiz		equ	4			;dir size, in BLS
+
+;	actual dpb
+
+spt		equ	11			;SPT sectors per track, 16b
+bsh		equ	4			;BSH block shift factor, 8b
+blm		equ	15			;BLM block mask, 8b
+exm		equ	0			;EXM extent mask, 8b
+dsm		equ	439			;DSM, 16b
+drm		equ	255			;DRM dir entries - 1, 16b
+al0		equ	%11110000		;AL0, 8b
+al1		equ	0			;AL1, 8b
+cks		equ	64			;CKS, 16b
+off		equ	0			;OFF, 16b
+
+;	various
+
+chrh		equ	7		;character height
+chrw		equ	8		;character width
+cls		equ	$1a		;clear screen
+cpmver		equ	$0022		;cpm version 2.2
+csi		equ	$9b
+extsiz		equ	$4000		;extent size
+logsiz		equ	1024		;size of log buffer
+namelen 	equ	8		;max filename length
+recmax		equ	128		;max no of records per extent
+recsiz		equ	$80		;record size
+secsiz		equ	512		;amiga sector size
+strbufsiz	equ	31		;max string gadget len+1, total
+typelen 	equ	3		;max filetype length
+z80jp		equ	$c3		;z80 jump instruction
+z80pgmsiz	equ	$10000
+
+;	backward reference
+
+logfilesize	equ	strbufsiz	;length of logfile name string
+
+;	for console window
+;	normal
+
+btchg		equ	1		;change in BorderTop
+winx		equ	0		;top x
+winy		equ	0		;top y
+conwinw 	equ	640		;width
+conwinh 	equ	200		;height
+conwinflg	equ	WINDOWDRAG+WINDOWDEPTH+SMART_REFRESH+NOCAREREFRESH+BORDERLESS
+
+;	special for debug
+
+dbgconwinw	equ	100		;start width
+dbgconwinh	equ	50		;start height
+dbgconwinflg	equ	WINDOWDRAG+WINDOWDEPTH+WINDOWSIZING+SMART_REFRESH+NOCAREREFRESH
+
+;	for input window
+
+strgadsiz	equ	20*chrw+4	;gadget size
+txtxoff 	equ	chrh+4
+inpxmarg	equ	2*chrw		;marginal to vert
+inpymarg	equ	inpxmarg/2	;marginal to horiz
+inpwinw 	equ	strgadsiz+2*inpxmarg ;width
+
+;	for input window gadgets
+;	ok
+
+inpokw		equ	6*chrw+5	;width
+inpokh		equ	chrh+5		;height
+inpokx		equ	inpxmarg	;top x
+inpoky		equ	-2*chrh 	;top y
+inpoktx 	equ	2*chrw+2	;text top x
+okid		equ	0		;id#
+
+;	cancel
+
+inpcanw 	equ	inpokw		;width
+inpcanh 	equ	inpokh		;height
+inpcanx 	equ	inpwinw-inpxmarg-inpcanw ;top x
+inpcany 	equ	inpoky		;top y
+canid		equ	1		;id#
+
+;	strings
+
+inpstrw 	equ	strgadsiz	;width
+inpstrh 	equ	chrh+4		;height
+inpstrx 	equ	inpokx		;top x
+strid		equ	2		;id#
+
+;	ascii control
+
+bs		equ	$08
+cr		equ	$0d
+esc		equ	$1b
+lf		equ	$0a
+
+		ds.w	0			;alignment
+
+		section ce,code
+
+;	osinit
+;	initialize CP/M emulator
+;	console window must be open
+;	entry : d0.w=two byte opcode to transfer control from the z80emulator
+;		     to the cpm emulator
+;	chg : d0,d1,d2,a0,a1,a6
+
+osinit: 	clr.b	flags
+
+;	put special opcode
+;	init fbase, the one and only jump
+
+		move.l	z80pgmptr,a0
+		add.l	#z80pgmsiz/2,a0 	;ptr log pgm start
+		move.l	a0,a1
+		add.w	#fbase,a0		;ptr fbase
+		move.b	d0,1(a0)                ;2:nd opcode byte
+		rol.w	#8,d0
+		move.b	d0,(a0)                 ;1:st opcode byte
+
+;	init bios, the z80 jump table
+
+		move.l	a1,a0			;log pgm start
+		add.w	#bios,a0		;ptr bios
+		move.b	#biosentry,d2		;spec op code table start
+		move.w	#(biostabend-biostab)/4-1,d1 ;cnt
+osinit2:	move.b	#z80jp,(a0)+
+		move.b	d2,(a0)+
+		move.b	#bioshi,(a0)+           ;one entry in table
+		addq.b	#biostl,d2		;nxt 2:nd tab start
+		dbra	d1,osinit2
+
+;	init bios, the special opcode table
+
+		add.w	#bios+biosentry,a1	;ptr bios entry addr
+		move.w	#(biostabend-biostab)/4-1,d1 ;cnt
+osinit4:	rol.w	#8,d0			;restore opcode
+		move.b	d0,1(a1)                ;2:nd opcode byte
+		rol.w	#8,d0
+		move.b	d0,(a1)                 ;1:st opcode byte
+		addq.l	#biostl,a1		;nxt 2:nd tab start
+		dbra	d1,osinit4
+		cmp.b	#$ff,conmsgpsb
+		beq.s	osinit1 		;if no signal alloc
+		rts
+
+;	open message port, console device & 2 StdIOReq
+
+osinit1:	move.l	#-1,d0
+		move.l	_SysBase,a6
+		jsr	_LVOAllocSignal(a6)
+		cmp.l	#-1,d0
+		beq	osinit3 		;if no alloc
+		move.b	d0,conmsgpsb		;signal #
+		move.l	 #0,a1
+		jsr	_LVOFindTask(a6)
+		move.l	d0,conmsgpt		;task ptr
+		move.l	#conmsgp,a1
+		jsr	_LVOAddPort(a6)
+		move.l	#conname,a0		;dev name
+		move.l	#conimsg,a1		;ptr IOReq, read
+		move.l	conwinptr,a5
+		subq.b	#btchg,wd_BorderTop(a5) ;to get 24 lines in console
+		move.l	a5,cimdata		;conwinptr
+		move.l	a1,a5
+		move.l	#wd_Size,cimlen 	;set up data
+		moveq.l #0,d0			;unit #
+		moveq.l #0,d1			;flgs
+		jsr	_LVOOpenDevice(a6)
+		or.l	d0,d0
+		bne.s	osinit3 		;if error
+		move.l	cimdev,comdev
+		move.l	cimunit,comunit 	;clone the 2:nd
+
+;	queue a read
+
+		move.l	a5,a1			;conimsg ptr
+		move.l	#conichr,cimdata	;data ptr
+		move.l	#1,cimlen
+		jsr	_LVOSendIO(a6)
+
+;	message in console window
+
+		move.l	#startmsg,comdata
+		jmp	conout1
+
+;	error in open console
+
+osinit3:	jmp	error5
+
+;	pzinit
+;	initialize z80 page zero
+;	dma address & disk parameter block
+;	close and/or unlock file
+;	exit  : d2=ptr z80 pgm logical start
+;	chg : d0,d1,d2,d3
+;	      a0,a1
+
+pzinit: 	move.w	#defdma,dmaddr
+		move.l	_DOSBase,a6
+		move.l	lock1,d1
+		beq.s	pzinit5 		;if no lock
+		bclr.b	#1,flags
+		clr.l	lock1			;flg no lock
+		jsr	_LVOUnLock(a6)
+
+;	close all files opened by transient
+
+pzinit5:	move.l	a2,-(a7)
+		move.l	#handles,a2		;ptr 1:st handle
+		move.w	#maxhan-1,d2		;loop cnt
+pzinit6:	move.l	(a2),d1                 ;handle
+		beq.s	pzinit4 		;if file not open
+		jsr	_LVOClose(a6)
+pzinit4:	clr.l	(a2)                    ;flg closed
+		add.l	#hanentsiz,a2
+		dbra	d2,pzinit6		;loop
+		move.l	(a7)+,a2                ;restore
+
+;	data area initialization
+
+		move.l	#pz1,a1
+		move.l	z80pgmptr,d2
+		add.l	#z80pgmsiz/2,d2 	;ptr log pgm start
+pzinit3:	move.l	d2,a0			;restore a0
+		move.w	(a1)+,d1
+		bne.s	pzinit1 		;if not end
+		rts
+pzinit1:	move.w	(a1)+,d3                ;start
+		add.w	d3,a0			;start
+pzinit2:	move.b	(a1)+,(a0)+             ;move to pgm area
+		dbra	d1,pzinit2
+		bra.s	pzinit3 		;nxt block
+
+;	osclose
+;	emulator end cleanup
+;	chg : d0,d1,a0,a1,a6
+
+osclose:	bsr	closelog
+		jsr	stoptrc
+		move.l	_SysBase,a6
+		move.b	conmsgpsb,d0		;signal #
+		cmp.b	#$ff,d0
+		bne.s	osclose2		;if signal alloc
+		rts
+osclose2:	jsr	_LVOFreeSignal(a6)
+		move.l	#conmsgp,a1
+		jsr	_LVORemPort(a6)
+		tst.l	cimdev
+		bne.s	osclose1		;if con is open
+		rts
+osclose1:	move.l	#conimsg,a1
+		jsr	_LVOCloseDevice(a6)
+		bra	pzinit
+
+;	osrun
+;	initialize cpm and entry into cpm ccp
+;	entry : d0.w=two byte opcode to transfer control from the z80emulator
+;		     to the cpm emulator
+;	exit  : file loaded in tpa and z80pc & z80sp set up
+;	chg : d0,d1,d2,d3,d4,d5,d6,d7
+;	      a0,a1,a2,a3,a6,a7
+;	26->
+
+osrun:		bsr	osinit
+
+;	entry from file not found
+
+osrun9: 	move.l	_SysBase,a6
+		move.l	z80pgmptr,d5
+		add.l	#z80pgmsiz/2+ccpbufpos,d5 ;ptr ccp buf start
+		bsr	pzinit
+		move.l	d5,a4
+		move.b	(-ccpbufpos+(pzdrv-pagezero))(a4),d7 ;def drive
+		add.b	#'A',d7                 ;drive letter
+		move.b	d7,d0
+		bsr	conout
+		move.b	#'>',d0
+		bsr	conout			;prompt
+		move.l	d5,d4
+		add.l	#ccpbuflen,d4		;max addr+1
+
+;	get data and process it
+
+		bsr	getclin
+
+;	construct file name in tpa
+
+		move.l	#newline,comdata
+		bsr	conout1
+		move.l	d4,a1			;start of tpa
+		move.b	d7,(a1)+                ;drive letter
+		move.b	#':',(a1)+
+		move.l	a4,d0
+		sub.l	d5,d0			;cmd line len
+		beq	osrun9			;if len=0
+		subq.l	#1,d0
+		move.l	d5,a2			;buf start
+osrun5: 	cmp.b	#' ',(a2)
+		beq.s	osrun4			;if end of first word
+		move.b	(a2)+,(a1)+             ;pgm name
+		dbra	d0,osrun5		;search
+
+;	end of first (or only) word found
+;	construct command line tail
+
+osrun4: 	move.l	d5,a3			;ptr start of cmd tail buf
+		addq.l	#1,d0			;comp for dbxx
+		move.b	d0,(a3)+                ;cmd tail len
+		move.b	d0,d1
+		beq	osrun11 		;if len=0
+		subq.l	#1,d0
+osrun12:	move.b	(a2)+,(a3)+
+		dbra	d0,osrun12		;move cmd tail
+
+;	construct fcb1 & fcb2
+
+		move.l	d5,a3			;ptr cmd tail buf
+		addq.l	#1,a3			;ptr 1:st chr
+osrun24:	cmp.b	#' ',(a3)
+		bne.s	osrun25 		;if start of word
+		addq.l	#1,a3			;nxt chr
+		sub.b	#1,d1
+		beq	osrun11 		;if cmd tail end
+		bra.s	osrun24 		;search for 1:st word
+osrun25:	move.l	#-ccpbufpos+fcb1,a0
+		add.l	d5,a0			;ptr fcb1
+		bclr.l	#30,d1			;flg fcb1 loop
+
+;	drive letter if any
+
+osrun18:	bclr.l	#31,d1			;flg file name loop
+		cmp.b	#1,d1
+		beq.s	osrun13 		;rem len =1
+		cmp.b	#':',1(a3)
+		bne.s	osrun13 		;if no drv spec
+		move.b	(a3)+,(a0)              ;drv letter
+		sub.b	#'A'-1,(a0)             ;cpm drv spec
+		addq.l	#1,a3			;skip ':'
+		sub.b	#2,d1
+		beq	osrun11 		;if cmd tail end
+
+;	file name & type
+
+osrun13:	addq.l	#1,a0			;ptr file mame
+		move.w	#namelen-1,d0		;chr cnt
+osrun16:	cmp.b	#' ',(a3)
+		beq.s	osrun14 		;if end of name&type
+		cmp.b	#'.',(a3)+
+		beq.s	osrun15 		;if end of name
+		move.b	-1(a3),(a0)+            ;name letter
+		sub.b	#1,d1
+		beq	osrun11 		;if cmd tail end
+		dbra	d0,osrun16		;loop thru name or type
+osrun17:	cmp.b	#' ',(a3)
+		beq.s	osrun14 		;if end of name&type
+		cmp.b	#'.',(a3)+
+		beq.s	osrun15 		;if end of name
+		sub.b	#1,d1
+		beq	osrun11 		;if cmd tail end
+		bra.s	osrun17 		;search for type
+osrun15:	sub.b	#1,d1
+		beq.s	osrun11 		;if cmd tail end
+		move.l	#-ccpbufpos+fcb1+namelen+1,a0
+		btst.l	#30,d1
+		beq.s	osrun19 		;if fcb1 loop
+		move.l	#-ccpbufpos+fcb2+namelen+1,a0
+osrun19:	add.l	d5,a0			;ptr fcb1 type
+		move.w	#typelen-1,d0		;chr cnt
+		bset.l	#31,d1			;flg file type loop
+		beq.s	osrun16 		;if name loop
+osrun20:	sub.b	#1,d1
+		beq.s	osrun11 		if cmd tail end
+		cmp.b	#' ',(a3)+
+		bne.s	osrun20 		;search for nxt word
+		bra.s	osrun21
+osrun14:	addq.l	#1,a3			;skip ' '
+		sub.b	#1,d1
+		beq.s	osrun11 		if cmd tail end
+osrun21:	cmp.b	#' ',(a3)
+		bne.s	osrun23 		;if nxt word
+		addq.l	#1,a3			;nxt chr
+		sub.b	#1,d1
+		beq.s	osrun11 		;if cmd tail end
+		bra.s	osrun21 		;search for nxt word
+osrun23:	move.l	#-ccpbufpos+fcb2,a0
+		add.l	d5,a0			;ptr fcb2
+		bset.l	#30,d1			;flg fcb2 loop
+		beq	osrun18 		;if fcb1 loop
+
+;	check for resident commands
+
+osrun11:	move.b	#' ',(a1)               ;space last in name
+		move.l	d4,a0
+		cmp.l	#'DIR ',2(a0)
+		beq	rcdir
+		cmp.l	#'ERA ',2(a0)
+		beq	rcera
+		cmp.l	#'TYPE',2(a0)
+		bne.s	osrun1			;if not type
+		cmp.b	#' ',2+4(a0)
+		beq	rctype
+
+;	load file into tpa
+
+osrun1: 	move.l	#filetyp,a0
+		move.w	#(filetype-filetyp)-1,d0
+osrun6: 	move.b	(a0)+,(a1)+
+		dbra	d0,osrun6		;move file type
+		move.l	d4,d1			;name ptr
+		move.l	#MODE_OLDFILE,d2
+		move.l	_DOSBase,a6
+		jsr	_LVOOpen(a6)            ;open file
+		or.l	d0,d0
+		beq	osrun7			;if no file
+		move.l	d0,d6			;file handle
+		move.l	d4,d2			;ptr tpa
+		move.l	#(z80pgmsiz/2)-tbase,d3 ;length
+		move.l	d6,d1			;file handle
+		jsr	_LVORead(a6)            ;read file
+		cmp.l	d0,d3
+		bne.s	osrun3			;if no more to read
+		move.l	d4,d2			;ptr tpa
+		sub.l	#(z80pgmsiz/2)+tbase,d2 ;ptr $8000 z80 mem
+		move.l	#(z80pgmsiz/2)-($10000-fbase),d3 ;length
+		move.l	d6,d1			;file handle
+		jsr	_LVORead(a6)            ;read file again
+osrun3: 	move.l	d0,d4			;result
+		move.l	d6,d1			;file handle
+		jsr	_LVOClose(a6)           ;close file
+		cmp.l	#-1,d4
+		beq	osrun8			;if read error
+
+;	file successfully placed in tpa
+
+		move.w	#tbase,z80pc		;set z80 pc
+		move.w	#bios-2,z80sp		;stack in end of bdos
+		move.l	d5,a0			;ptr cmd tailbuf start
+		add.w	#bios-ccpbuflen,a0	;ptr bios
+		move.b	pagezero+1,-2(a0)
+		move.b	pagezero+2,-1(a0)       ;wboot ret addr
+		rts
+
+;	file not found or read error
+
+osrun8:
+osrun7: 	move.l	#ccpbuflen+2,a0
+		add.l	d5,a0			;ptr name
+		move.l	a0,comdata
+osrun22:	cmp.b	#'.',(a0)+
+		bne.s	osrun22 		;search for '.'
+		clr.b	-(a0)                   ;mark end
+
+;	entry from error in resident commands
+
+osrun2: 	bsr	conout1
+		move.b	#'?',d0
+		bsr	conout			;'name?'
+		move.l	#newline,comdata
+		bsr	conout1
+		bra	osrun9			;try again
+
+;	resident commands
+
+;	dir
+
+rcdir:		move.w	#fcb1,d2save+2		;fcbptr
+		sub.w	#tbase,a0		;ptr log start
+		move.l	a0,a1
+		add.w	#defdma+1,a1
+		move.l	a1,d5			;abs dir ptr
+		move.l	a0,a4save
+		bsr	serfir
+		beq.s	rcdir1			;if no find
+
+;	output dir list
+
+rcdir7: 	move.w	#3,d6			;4 entries / line
+rcdir6: 	cmp.w	#3,d6
+		bne.s	rcdir4			;if not 1:st on line
+		move.b	drvlet,d0
+		bsr	conout
+		move.l	#dirsep+1,comdata
+		bsr	conout1
+rcdir4: 	move.l	d5,a2
+		move.w	#namelen-1,d2
+rcdir2: 	move.b	(a2)+,d0
+		bsr	conout
+		dbra	d2,rcdir2		;output name
+		move.b	#' ',d0
+		bsr	conout			;output nt separator
+		move.w	#typelen-1,d2
+rcdir3: 	move.b	(a2)+,d0
+		bsr	conout
+		dbra	d2,rcdir3		;output type
+		tst.w	d6
+		beq.s	rcdir5			;if last on line
+		move.l	#dirsep,comdata
+		bsr	conout1
+rcdir5: 	bsr	sernxt
+		beq.s	rcdir1			;if no find
+		dbra	d6,rcdir6		;line loop
+		move.l	#newline,comdata
+		bsr	conout1
+		bra.s	rcdir7			;start new line
+rcdir1: 	jmp	osexit
+
+;	type
+
+rctype: 	sub.w	#tbase,a0		;ptr log start
+		move.l	a0,a4save
+		move.l	a0,a3
+		add.w	#fcb1,a3		;abs fcb ptr
+		add.w	#defdma,a0		;abs dma addr
+		move.l	a0,d4
+		bsr	xlname
+		addq.l	#2,d1			;skip drv
+		move.l	d1,comdata		;set up for error
+		subq.l	#2,d1			;restore
+		move.l	#MODE_OLDFILE,d2
+		move.l	_DOSBase,a6
+		jsr	_LVOOpen(a6)
+		or.l	d0,d0
+		beq	osrun2			;if no file
+		move.l	d0,d5
+
+;	output file to terminal
+
+rctype2:	move.l	d5,d1			;handle
+		move.l	d4,d2			;ptr buffer
+		move.l	#recsiz,d3		;len
+		move.l	_DOSBase,a6
+		jsr	_LVORead(a6)
+		or.l	d0,d0
+		beq.s	rctype1 		;if eof
+		move.l	d0,comlen		;length
+		move.l	d4,comdata		;ptr buffer
+		bsr	conout2
+
+;	allow pause and/or break of output
+
+		bsr	conchk
+		beq.s	rctype2 		;if no chr
+		cmp.b	#3,d6
+		beq.s	rctype1 		;if ctrl-c
+		bsr	conwait
+		cmp.b	#3,d6
+		bne.s	rctype2 		;if not ctrl-c
+rctype1:	jmp	osexit
+
+;	era
+
+rcera:		move.l	_DOSBase,a6		;for later use
+		move.w	#fcb1,a3		;z80 fcb ptr
+		add.l	a4save,a3		;abs fcb ptr
+		bsr	xlname
+		jsr	_LVODeleteFile(a6)
+		tst.l	d0
+		beq	osrun2			;if no file
+		jmp	osexit
+
+;	osentry
+;	entry into cpm fdos functions
+;	the z80 emulator should transfer control to this routine when it
+;	encounters the 2 byte opcode set up by osinit
+;	entry : registers as per emulation
+;	exit : register set up as defined by cpm bdos and bios calls
+;	       last the routine does a ret by jumping to emuret
+;	       d6.w=ffee, ff=function number, ee=error code
+;		    error code 0 : no error
+;			       1 : transfer from over bios area
+;			       2 : call to unimplemented bios function
+;			       3 : transfer from under bdos area
+;			       4 : transfer from between bdos-bios area
+;			       5 : call to undefined bdos function
+;			       6 : call to unimplemented bdos function
+;			       7 : unimplemented terminal escape requence
+;			       8 : file handle table full
+
+;	chg : - (except as defined in exit)
+
+osentry:
+
+;	save registers
+
+		move.l	d0,d0save
+		move.l	d1,d1save
+		move.l	d2,d2save
+		move.l	d3,d3save
+		move.l	d4,d4save
+		move.l	d5,d5save
+		move.l	d7,d7save
+		move.l	a0,a0save
+		move.l	a1,a1save
+		move.l	a2,a2save
+		move.l	a3,a3save
+		move.l	a4,a4save
+		move.l	a6,a6save
+
+;	check were the routine were called
+
+		move.w	a0,d6			;pc
+		subq.w	#2,d6			;comp for 2 byte opcode
+		cmp.w	#bios,d6
+		blt	osentry1		;if possible bdos entry
+
+;	possible bios entry
+
+		cmp.w	#bios+biosentry+(biostabend-biostab)/4*biostl,d6
+		bge	oserr1			;if over bios
+		sub.w	#biosentry,d6		;rel ptr into bios
+		divu.w	#biostl,d6
+		swap	d6			;q<->r
+		or.w	d6,d6
+		bne	oserr1			;if not correct entry point
+
+;	correct bios call
+
+		swap	d6
+		moveq.l #0,d3
+		move.b	d6,d3			;function #
+		btst.b	#5,glflgs
+		beq.s	osentry4		;if no count
+
+;	count bios calls
+
+		move.l	cntbuf,a5
+		add.w	d3,a5
+		addq.b	#1,biosoffs(a5)         ;inc cnt
+		bne.s	osentry2		;if not max cnt
+		subq.b	#1,biosoffs(a5)         ;restore max cnt
+osentry2:	addq.l	#1,a0
+osentry4:	move.l	#biostab,a5
+		asl.w	#2,d3			;4 bytes per entry
+		move.l	0(a5,d3.l),a5           ;routine addr
+		lsr.w	#2,d3			;restore
+		jmp	(a5)                    ;do routine
+
+;	possible bdos call
+
+osentry1:	cmp.w	#fbase,d6
+		blt	oserr3			;if under fbase
+		bne	oserr4			;if not at start
+
+;	correct bdos call
+
+		and.l	#$000000ff,d3		;isolate routine #
+		btst.b	#5,glflgs
+		beq.s	osentry5		;if no count
+
+;	count bdos calls
+
+		move.l	cntbuf,a5
+		add.w	d3,a5
+		addq.b	#1,bdosoffs(a5)         ;inc cnt
+		bne.s	osentry6		;if not max cnt
+		subq.b	#1,bdosoffs(a5)         ;restore max cnt
+osentry6:	addq.l	#1,a0
+osentry5:	move.l	#bdostab,a5
+		cmp.b	#(bdostabend-bdostab)/4,d3
+		bgt	oserr5			;if undefined bdos call
+		asl.w	#2,d3			;4 bytes per entry
+		move.l	0(a5,d3.l),a5           ;routine addr
+		lsr.w	#2,d3			;restore #
+		jmp	(a5)                    ;do routine
+
+;	common exit point from bdos & bios functions
+;	restore registers
+
+osentry3:	move.l	d0save,d0
+		move.l	d1save,d1
+		move.l	d2save,d2
+		move.l	d3save,d3
+		move.l	d4save,d4
+		move.l	d5save,d5
+		move.l	d7save,d7
+		move.l	a0save,a0
+		move.l	a1save,a1
+		move.l	a2save,a2
+		move.l	a3save,a3
+		move.l	a4save,a4
+		move.l	a6save,a6
+		jmp	emuret			;return to caller
+
+;	errors
+
+oserr1: 	move.w	#1,d6			;transfer over bios
+		move.l	#errtxt1,a5
+		bra.s	osentry3
+oserr2: 	move.b	#2,d6			;unimplemented bios
+		move.l	#errtxt2,a5
+		bra.s	oserr61
+oserr3: 	move.w	#3,d6			;transfer under bdos
+		move.l	#errtxt3,a5
+		bra.s	osentry3
+oserr4: 	move.w	#4,d6			;transfer betwee bdos/bios
+		move.l	#errtxt4,a5
+		bra	osentry3
+oserr5: 	move.b	#5,d6			;undefined bdos
+		move.l	#errtxt5,a5
+		bra.s	oserr61
+oserr6: 	move.b	#6,d6			;unimplemented bdos
+		move.l	#errtxt6,a5
+oserr61:	rol.w	#8,d6
+		move.b	d3,d6			;function no
+		rol.w	#8,d6
+		bra	osentry3
+oserr7: 	move.b	#7,d6			;unimplemented esc seq
+		move.l	#errtxt7,a5
+		bra.s	oserr61
+oserr8: 	move.w	#8,d6			;file handle table full
+		move.l	#errtxt8,a5
+		bra	osentry3
+
+;	bdos functions
+
+;	bdos function 0 : system reset
+;	entry : c=00h
+
+bdos00: 	jmp	osexit
+
+;	bdos function 1 : console input
+;	echo to console output, wait until character ready
+;	entry : c=01h
+;	exit  : a=chr
+
+bdos01: 	bsr	biosci
+		move.b	d6,d0save+3		;chr to a reg
+		move.b	d6,d1save+3		;chr to l reg
+		move.b	d6,d0
+		bra.s	bdos0613		;echo & exit
+
+;	bdos function 2 : console output
+;	entry : c=02h, e=chr
+
+bdos02: 	move.b	d2save+3,d0		;e reg
+		bra.s	bdos0613		;output & exit
+
+;	bdos function 6 : direct console I/O
+;	entry : c=06h, e=$ff (if input) or chr (if output)
+;	exit  : a=chr ($ff if no chr)
+
+;	14->
+
+bdos06: 	move.b	d2save+3,d0		;e reg
+		move.l	_SysBase,a6		;for later use
+		cmp.b	#$ff,d0
+		beq	bdos061 		;if input
+
+;	if console output
+;	NOTEZ BIEN !!!
+;	all output to console should be routed through this routine
+;	entry from bios0c
+
+bdos0613:	and.b	#%01111111,d0		;use 7 bits
+		btst.b	#0,flags
+		bne.s	bdos067 		;if esc seq
+		cmp.b	#' ',d0
+		blt.s	bdos062 		;if ctrl
+
+;	output alphanumeric
+
+bdos066:	bsr	conout
+bdos0611:	move.b	#0,d6			;flg no error
+		beq	osentry3		;if no error
+
+;	output control characters
+
+bdos062:	cmp.b	#esc,d0
+		beq.s	bdos063 		;if <esc>
+
+;	control except esc
+
+		cmp.b	#cls,d0
+		beq	txl4c			;if clear screen
+		bra.s	bdos066 		;go and output
+
+;	escape
+
+bdos063:	bset.b	#0,flags		;flg esc
+		clr.b	escptr			;seq rel ptr
+		bra.s	bdos0611
+
+;	escape sequence
+
+bdos067:	tst.b	escptr
+		bne.s	bdos0610		;if param rx
+
+;	first chr in escape sequence, get sequence lenght
+
+		move.b	d0,escseq
+		move.w	#(esctabend-esctab)/8,d1 ;cnt
+		move.l	#esctab+1,a0		;ptr 1:st
+bdos069:	cmp.b	(a0)+,d0
+		beq.s	bdos068 		;if find
+		addq.l	#7,a0			;nxt entry
+		dbra	d1,bdos069		;tab loop
+		bclr.b	#0,flags		;flg no esc
+		btst.b	#4,glflgs
+		beq.s	bdos0611		;if no req
+		move.b	d0,d3			;esc seq
+		bra	oserr7			;make requester
+bdos068:	move.l	(a0)+,escxlt            ;xlt addr
+		move.w	(a0),escptr             ;rel cnt
+		bne.s	bdos0611		;if seq len >0
+		bclr.b	#0,flags		;flg no esc
+		bra.s	bdos0612		;do esc
+
+;	escape sequence parameter reception
+
+bdos0610:	move.l	#escrx,a0		;buffer ptr
+		move.w	escptr,d1		;rel ptr
+		move.b	d0,0(a0,d1.w)           ;save chr
+		addq.w	#1,escptr		;nxt buf pos
+		bne	bdos0611		;if not last in seq
+		bclr.b	#0,flags		;flg no esc
+bdos0612:	move.l	escxlt,a1
+		jmp	(a1)                    ;translate esc seq
+
+;	console input
+
+bdos061:	bsr	bioscc
+		or.b	d6,d6
+		beq.s	bdos064 		;if no chr
+		bsr	biosci
+		move.b	d6,d0save+3		;chr to a reg
+		move.b	d6,d1save+3		;chr to l reg
+		bra	bdos0611		;exit
+
+;	no message
+
+bdos064:	move.b	d6,d0save+3		;flg no chr
+		move.b	d6,d1save+3		;and i l reg
+		bra	bdos0611		;exit
+
+;	bdos function 9 : Print string
+;	entry : c=09h, de=ptr to string, string ends with '$'
+
+bdos09: 	move.w	d2save+2,d0		;de reg
+		move.l	z80pgmptr,a2
+		add.l	#z80pgmsiz/2,a2 	;ptr log pgm start
+		add.w	d0,a2			;ptr string
+		move.l	_SysBase,a6		;for later use
+bdos092:	move.b	(a2)+,d0                ;chr
+		cmp.b	#'$',d0
+		beq	bdos0611		;if end, exit
+		bsr	conout
+		bra.s	bdos092 		;loop until end
+
+;	bdos function 10 : Read console buffer
+;	entry : c=0ah, de=ptr to buffer (buffer pos 00=buffer size)
+;	exit  : characters in buffer (buffer pos 01=actual buffer size)
+
+bdos10: 	move.w	d2save+2,d0		;de reg
+		move.l	z80pgmptr,a4
+		add.l	#z80pgmsiz/2,a4 	;ptr log pgm start
+		add.w	d0,a4			;ptr buffer
+		moveq.l #0,d4
+		move.b	(a4),d4                 ;buffer size
+		add.l	a4,d4			;max addr + 1
+		addq.l	#2,a4			;ptr 1:st in buffer
+		move.l	a4,d5			;min addr
+		bsr	getclin
+		sub.l	d5,a4			;# of chrs
+		move.l	a4,d4
+		move.l	d5,a4			;min addr
+		move.b	d4,-1(a4)               ;set # of chrs
+		bra	bdos0611		;exit
+
+;	bdos function 11 : Get console status
+;	entry : c=0bh
+;	exit  : a=console status, $ff=chr rdy, $00=no chr
+
+bdos11: 	bsr	bioscc
+		move.b	d6,d0save+3		;flg in a
+		move.b	d6,d1save+3		;and in l
+		bra	bdos0611		;exit
+
+;	bdos function 12 : Return version number
+;	entry : c=0ch
+;	exit  : hl=version number
+
+bdos12: 	move.w	#cpmver,d1save+2	;hl reg
+		move.b	d1save+2,d3save+2	;copy h to b
+		move.b	d1save+3,d0save+3	;copy a to l
+		bra	bdos0611		;exit
+
+;	bdos function 13 : Reset disk system
+;	entry : c=0dh
+
+bdos13: 	move.w	#defdma,dmaddr		;dma address
+		move.l	z80pgmptr,a4
+		move.b	#defdrv,(-ccpbufpos+(pzdrv-pagezero))(a4) ;def drive
+		bra	bdos0611		;exit
+
+;	bdos function 14 : Select disk
+;	entry : c=0eh, e=selected disk
+
+bdos14: 	move.b	d2save+2,d0		;e reg
+		cmp.b	#15,d0
+		bgt	bdos0611		;exit if >15
+		tst.b	d0
+		blt	bdos0611		;exit if <0
+		move.l	z80pgmptr,a4
+		move.b	d0,(-ccpbufpos+(pzdrv-pagezero))(a4) ;def drive
+		bra	bdos0611		;exit
+
+;	bdos function 15 : Open file
+;	entry	 : c=0fh, de=fcb address
+;	internal : d5.l b0=make file
+;	exit	 : a=directory code
+
+bdos15: 	bclr.l	#0,d5			;flg open file
+
+;	entry from bdos22
+
+bdos154:	move.w	d2save+2,a3		;z80 fcb ptr
+		add.l	a4save,a3		;abs fcb ptr
+		clr.b	fcbcr-fcb1(a3)          ;clr cr (sic)
+		clr.b	fcbex-fcb1(a3)          ;clr ex (sic)
+		move.l	a3,a5			;abs fcb ptr
+		bsr	gethan
+		bne.s	bdos157 		;if already open
+		bsr	xlname
+
+;	check directory for file
+
+		move.l	#MODE_OLDFILE,d2	;for open
+		btst.l	#0,d5
+		beq.s	bdos155 		;if open
+		move.l	#MODE_NEWFILE,d2	;for make
+bdos155:	move.l	_DOSBase,a6
+		jsr	_LVOOpen(a6)            ;open file
+		or.l	d0,d0
+		beq	bdos156 		;if no file
+
+;	if successful open
+;	search for free place in table
+
+		move.l	#handles,a2		;ptr 1:st handle
+		move.w	#maxhan-1,d2		;loop cnt
+bdos152:	tst.l	(a2)                    ;handle
+		beq.s	bdos151 		;if free
+		add.l	#hanentsiz,a2
+		dbra	d2,bdos152
+
+;	no place found in table
+
+		move.l	d0,d1			;handle
+		jsr	_LVOClose(a6)
+		bra	oserr8
+
+		bra.s	bdos156
+
+;	place found in table
+
+bdos151:	move.l	d0,(a2)+                ;handle
+		move.w	#hannamsiz-1,d2 	;loop cnt
+bdos153:	move.b	(a5)+,(a2)+             ;copy FCB file name
+		dbra	d2,bdos153
+
+;	successful exit from bdos16,17,18,19,20,23 also
+
+bdos157:	clr.b	d0save+3		;flg open success
+		clr.b	d1save+3		;and in l reg
+		bra	bdos0611		;exit
+
+;	if unsuccessful open
+;	if seek or read/write error or end of file from bdos20
+;	if no find from bdos17 & bdos18 & bdos19 & bdos23
+;	if no file open error from bdos16
+
+bdos156:	move.b	#$ff,d0save+3		;flg open failure
+		move.b	#$ff,d1save+3		;and in l reg
+		bra	bdos0611		;exit
+
+;	bdos function 16 : Close file
+;	entry : c=10h, de=fcb address
+;	exit  : a=directory code
+
+bdos16: 	move.l	_DOSBase,a6		;for later use
+		move.w	d2save+2,a3		;z80 fcb ptr
+		add.l	a4save,a3		;abs fcb ptr
+		bsr	gethan
+		beq.s	bdos156 		;if no handle found
+		clr.l	(a2)                    ;flg closed
+		jsr	_LVOClose(a6)
+		bra.s	bdos157 		;exit
+
+;	bdos function 17 : Search for first
+;	entry : c=11h, de=fcb address
+;	exit  : a=directory code
+
+bdos17: 	bsr	serfir
+bdos171:	beq.s	bdos156
+		bra.s	bdos157
+
+;	bdos function 18 : Search for next
+;	entry : c=12h, de=fcb address
+;	exit  : a=directory code
+
+bdos18: 	bsr	sernxt
+		bra.s	bdos171
+
+;	bdos function 19 : Delete file
+;	entry	 : c=13h, de=fcb address
+;	exit	 : a=directory code
+
+bdos19: 	move.l	_DOSBase,a6		;for later use
+		move.w	d2save+2,a3		;z80 fcb ptr
+		add.l	a4save,a3		;abs fcb ptr
+		bsr	gethan
+		bne.s	bdos191 		;if handle found
+		clr.l	d0
+		move.l	d0,a2			;flg no handle
+bdos191:	move.l	a2,a5
+		bsr	xlname
+		jsr	_LVODeleteFile(a6)
+		tst.l	d0
+		beq.s	bdos156 		;if no file
+		move.l	a5,d0
+		tst.l	d0			;flg closed
+		beq	bdos157 		;exit if no handle
+		clr.l	(a5)                    ;flg closed
+		bra	bdos157 		;exit
+
+;	bdos function 20 : Read sequential
+;	entry	 : c=14h, de=fcb address
+;	internal : d5.l b0=random, b1=write
+;	exit	 : a=directory code
+
+bdos20: 	bclr.l	#0,d5			;flg sequential
+		bclr.l	#1,d5			;flg read
+
+;	entry from bdos21,33,34
+
+bdos203:	move.l	_DOSBase,a6		;for later use
+		move.w	d2save+2,a3		;z80 fcb ptr
+		move.l	a4save,a4		;ptr pgm middle
+		add.l	a4,a3			;abs fcb ptr
+		moveq.l #0,d0
+		move.w	d0,d6
+		btst.l	#0,d5
+		beq.s	bdos202 		;if read seq
+
+;	if random, calculate extent and record
+
+		move.b	fcbr1-fcb1(a3),d0       ;rnd rec hi
+		asl.w	#8,d0			;move hi
+		move.b	fcbr0-fcb1(a3),d0       ;rnd rec lo
+		divu.w	#extsiz/recsiz,d0	;rec.w ext.w
+		move.b	d0,fcbex-fcb1(a3)       ;set cur extent
+		swap	d0			;get rec
+		move.b	d0,fcbcr-fcb1(a3)       ;set cur record
+		moveq.l #0,d0
+bdos202:	move.b	fcbex-fcb1(a3),d0       ;cur extent
+		mulu.w	#extsiz,d0		;tot extent size
+		move.b	fcbcr-fcb1(a3),d6       ;cur record
+		mulu.w	#recsiz,d6		;tot record size
+		add.l	d0,d6			;pos in file
+		bsr	gethan
+		beq	bdos156 		;if no handle
+		move.l	d1,d4			;handle for later use
+		moveq.l #0,d2
+		move.l	#OFFSET_CURRENT,d3
+		jsr	_LVOSeek(a6)            ;get position
+		cmp.l	d0,d6
+		beq.s	bdos201 		;if correct pos
+
+;	if repositioning in file is required
+
+		move.l	d4,d1			;handle
+		move.l	d6,d2			;pos
+		move.l	#OFFSET_BEGINNING,d3
+		jsr	_LVOSeek(a6)            ;position
+		cmp.l	#-1,d0
+		beq	bdos156 		;if error
+
+;	read/write file
+
+bdos201:	moveq.l #0,d0
+		move.w	dmaddr,d0
+		cmp.l	#$8000-recsiz,d0
+		ble.s	bdos206 		;if dma in lower z80 mem
+		cmp.l	#$8000,d0
+		bge.s	bdos206 		;if dma in upper z80 mem
+
+;	dma over $8000 boundry
+
+		move.w	#$8000,d3
+		sub.w	d0,d3			;size to $8000
+		move.l	a4,a5			;mid ptr
+		add.w	d0,a5
+		move.l	a5,d2			;abs dma ptr
+		move.l	d4,d1			;handle
+		btst.l	#1,d5
+		bne.s	bdos207 		;if write
+		jsr	_LVORead(a6)
+		bra.s	bdos208
+bdos207:	jsr	_LVOWrite(a6)
+bdos208:	cmp.l	#-1,d0
+		beq	bdos156 		;if error
+		or.l	d0,d0
+		beq	bdos156 		;if end of file
+		move.w	#recsiz,d0
+		sub.w	d3,d0			;remaining size
+		move.w	d0,d3
+		move.w	#$8000,d0		;new dma addr
+		bra.s	bdos209
+
+;	normal read/write
+
+bdos206:	move.l	#recsiz,d3		;length
+bdos209:	add.w	d0,a4			;abs ptr file dma
+		move.l	a4,d2
+		move.l	d4,d1			;handle
+		btst.l	#1,d5
+		bne.s	bdos204 		;if write
+		jsr	_LVORead(a6)
+		bra.s	bdos205
+bdos204:	jsr	_LVOWrite(a6)
+bdos205:	cmp.l	#-1,d0
+		beq	bdos156 		;if error
+		or.l	d0,d0
+		beq	bdos156 		;if end of file
+		btst.l	#0,d5
+		bne	bdos157 		;if read rnd
+
+;	if sequential, update record and extent
+
+		addq.b	#1,fcbcr-fcb1(a3)       ;next record
+		cmp.b	#recmax,fcbcr-fcb1(a3)
+		bne	bdos157 		;if no rec ovf
+		addq.b	#1,fcbex-fcb1(a3)       ;next extent
+		clr.b	fcbcr-fcb1(a3)          ;init record
+		bra	bdos157 		;success exit
+
+;	bdos function 21 : Write sequential
+;	entry	 : c=15h, de=fcb address
+;	exit	 : a=directory code
+
+bdos21: 	bclr.l	#0,d5			;flg sequential
+		bset.l	#1,d5			;flg write
+		bra	bdos203
+
+;	bdos function 22 : Make file
+;	entry	 : c=16h, de=fcb address
+;	exit	 : a=directory code
+
+bdos22: 	bset.l	#0,d5			;flg make file
+		bra	bdos154
+
+;	bdos function 23 : Rename file
+;	entry	 : c=17h, de=fcb address old name, de+16=fcb new name
+;	exit	 : a=directory code
+
+bdos23: 	move.w	d2save+2,a5		;z80 fcb ptr
+		add.l	a4save,a5		;abs fcb ptr old
+		move.l	a5,a3
+		add.w	#fcb2-fcb1,a3		;abs fcb ptr new
+		bsr	xlname
+		move.l	d1,d2			;ptr new name
+		move.l	a5,a3			;abs fcb old
+		move.l	#fnbuf2,a4
+		bsr	xlnameb
+		move.l	_DOSBase,a6
+		jsr	_LVORename(a6)
+		tst.l	d0
+		beq	bdos156 		;if failure
+		bra	bdos157 		;exit
+
+;	bdos function 25 : Return current disk
+;	entry : c=19h
+;	exit  : a=current disk
+
+bdos25: 	move.l	a4save,a2		;ptr pgm middle
+		move.b	pzdrv-pagezero(a2),d0   ;def drv
+		move.b	d0,d0save+3		;to a reg
+		move.b	d0,d1save+3		;and to l reg
+		bra	bdos0611		;exit
+
+;	bdos function 26 : Set DMA address
+;	entry : c=1ah, de=DMA address
+
+bdos26: 	move.w	d2save+2,dmaddr 	;dma address
+		bra	bdos0611		;exit
+
+;	bdos function 27 : Get ADDR(Alloc)
+;	entry : c=1bh
+;	exit  : hl=ALLOC address
+
+bdos27: 	move.w	#alloc,d1save+2 	;ptr to hl reg
+		move.b	d1save+3,d0save+3	;copy l to a
+		move.b	d1save+2,d3save+2	;copy h to b
+
+;	calculate allocation vector
+;	get info for current drive
+
+		bclr.b	#1,flags		;flg fib & lock not valid
+		move.l	a4save,a2		;ptr pgm middle
+		move.b	pzdrv-pagezero(a2),d0   ;def drive
+		add.b	#'A',d0                 ;drive letter
+		move.l	#fnbuf,a1
+		move.l	a1,d1			;name ptr
+		move.b	d0,(a1)+
+		move.b	#':',(a1)+
+		clr.b	(a1)+                   ;disk name
+		move.l	#ACCESS_READ,d2
+		move.l	_DOSBase,a6
+		jsr	_LVOLock(a6)
+		or.l	d0,d0
+		beq	bdos0611		;if no lock, exit
+		move.l	d0,d3
+		move.l	fibptr,d0
+		bne.s	bdos272 		;if allocated
+		move.l	#fib_SIZEOF,d0		;size
+		jsr	xalloc
+		bne.s	bdos273 		;if success
+		jmp	error4
+bdos273:	move.l	d0,fibptr
+bdos272:	move.l	d0,d2			;data ptr
+		move.l	d0,a3
+		move.l	d3,d1			;lock
+		move.l	_DOSBase,a6
+		jsr	_LVOInfo(a6)
+		or.l	d0,d0
+		beq	bdos0611		;if no info, exit
+
+;	set up allocation vector
+
+		move.l	id_NumBlocksUsed(a3),d0
+		mulu.w	#secsiz,d0		;bytes used
+		add.w	#alloc,a2		;ptr alloc
+		move.b	#al0,(a2)+
+		move.b	#al1,(a2)+              ;move al
+		move.l	a2,a3
+		move.w	#(dsm>>3),d1            ;byte cnt
+bdos271:	clr.b	(a2)+
+		dbra	d1,bdos271		;clr vector
+		divu.w	#blsiz,d0		;cpm blocks used
+		sub.w	#dirsiz,d0		;sub used by dir
+		bmi	bdos0611		;if neg allocated
+		move.w	d0,d1
+		and.w	#%0000000000000111,d1
+		beq.s	bdos275 		;if no partial byte
+		subq.w	#1,d1			;use d1 as cnt
+		move.b	#%10000000,d2
+		asr.b	d1,d2			;shift in bytes
+		move.b	d2,(a3)+
+bdos275:	lsr.w	#3,d0			;whole bytes
+		beq	bdos0611		;if no whole bytes
+		subq.w	#1,d0
+bdos274:	move.b	#$ff,(a3)+
+		dbra	d0,bdos274		;fill bytes
+		bra	bdos0611		;exit
+
+;	bdos function 31 : Get ADDR(Disk parms)
+;	entry : c=1fh
+;	exit  : hl=DPB address
+
+bdos31: 	move.w	#dpb,d1save+2		;ptr to hl reg
+		move.b	d1save+3,d0save+3	;copy l to a
+		move.b	d1save+2,d3save+2	;copy h to b
+		bra	bdos0611		;exit
+
+;	bdos function 32 : Set/get user code
+;	entry : c=20h, e=ffh(get) else set user code
+;	exit  : a=current user code
+
+bdos32: 	move.b	#0,d1save+3		;user code to l
+		move.b	d1save+3,d0save+3	;copy l to a
+		move.b	d1save+2,d3save+2	;copy h to b
+		bra	bdos0611		;exit
+
+;	bdos function 33 : Read random
+;	entry : c=21h, de=FCB address
+;	exit  : a=return code
+
+bdos33: 	bset.l	#0,d5			;flg random
+		bclr.l	#1,d5			;flg read
+		bra	bdos203 		;same as read seq
+
+;	bdos function 34 : Write random
+;	entry : c=22h, de=FCB address
+;	exit  : a=return code
+
+bdos34: 	bset.l	#0,d5			;flg random
+		bset.l	#1,d5			;flg write
+		bra	bdos203 		;same as read seq
+
+;	bdos function 36 : Set random record
+;	entry : c=24h, de=FCB address
+;	exit  : random record field set in FCB
+
+bdos36: 	move.w	d2save+2,a3		;z80 fcb ptr
+		add.l	a4save,a3		;abs fcb ptr old
+
+;	set random record from extent and record
+
+		moveq.l #0,d0
+		move.l	d0,d1
+		move.b	fcbcr-fcb1(a3),d0       ;cur record
+		move.b	fcbex-fcb1(a3),d1       ;cur extent
+		mulu.w	#extsiz/recsiz,d1	;tot extent size
+		add.w	d0,d1			;tot record size
+		move.b	d1,fcbr0-fcb1(a3)       ;rnd rec lo
+		lsr.w	#8,d0			;move hi->lo
+		move.b	d1,fcbr1-fcb1(a3)       ;rnd rec hi
+		move.b	#0,fcbr2-fcb1(a3)       ;rnd rec highest
+		bra	bdos0611		;exit
+
+;	   ___	 ___	     ___   ___	 ___   ___   ___   ___
+;	|     |     | |   | |	  |	    | |   | |	| |   |
+;	|  ___|  ___| |___| |___  |___	    | |___| |___| |   |
+;	| |	    |	  |	| |   |     | |   |	| |   |
+;	| |___	 ___|	  |  ___| |___|     | |___|  ___| |___|
+
+		ds.w	0			;alignment
+bdos03:
+bdos04:
+bdos05:
+bdos07:
+bdos08:
+bdos24:
+bdos28:
+bdos29:
+bdos30:
+bdos35:
+bdos37:
+bdos40: 	bra	oserr6
+
+;	gethan
+;	get a handle to a file from table
+;	entry : a3=ptr to FCB file name
+;	exit  : a2=ptr to handle in tab, d1=handle, zflg=no find
+;	chg   : d0,d1,d2,d3
+;		a2
+
+gethan: 	move.l	#handles,a2		;ptr 1:st handle
+		move.w	#maxhan-1,d1		;handle loop cnt
+gethan4:	move.w	#hannamsiz-1,d2 	;name loop cnt
+		tst.l	(a2)                    ;handle
+		beq.s	gethan1 		;if free
+		moveq.l #0,d0			;name index
+gethan3:	move.b	0(a3,d0.w),d3           ;FCB chr
+		cmp.b	4(a2,d0.w),d3
+		bne.s	gethan1 		;if no match
+		addq.l	#1,d0			;nxt chr
+		dbra	d2,gethan3		;name match loop
+		move.l	(a2),d1                 ;handle
+		rts				;exit
+gethan1:	add.l	#hanentsiz,a2		;nxt handle
+		dbra	d1,gethan4
+		moveq.l #0,d1			;flg no find
+		rts
+
+;	reqstr
+;	get strings from user
+;	entry : a2.l=ptr table of size.w of & ptrs.l to input buffers
+;		     last size is 0
+;		a4.l=ptr table of ptrs to prompts to buffers, last is zero
+;	exit : d2.l=1 if ok gadget, 2 if cancel gadget
+;	chg : d0,d1,d2,d3
+;	      a0,a1,a2,a3,a4,a6
+
+;	8->
+
+reqstr: 	move.l	intbase,a6
+
+;	calculate window size and gadget positions
+;	init string gadget structures
+
+		move.w	#txtxoff,d0		;init height
+		move.l	#inpstr1,a1		;ptr 1:st gad
+reqstr5:	move.w	(a2)+,d1                ;buf size
+		beq.s	reqstr4 		;if end of tab
+		add.w	#2*txtxoff,d0		;y pos of nxt gadget
+		move.w	d0,gg_TopEdge(a1)
+		move.l	gg_SpecialInfo(a1),a3   ;ptr spec info
+		move.l	(a2)+,si_Buffer(a3)     ;buf ptr
+		move.w	d1,si_MaxChars(a3)      ;buf size
+		move.l	gg_NextGadget(a1),d1    ;nxt gadget
+		move.l	d1,a1
+		bne.s	reqstr5 		;if more str gads
+
+;	open window
+
+reqstr4:	move.l	#inpwin,a0		;window ptr
+		move.w	d0,d3			;y pos last gadget
+		add.w	#4*txtxoff,d0
+		move.w	d0,nw_Height(a0)        ;window height
+		jsr	_LVOOpenWindow(a6)
+		or.l	d0,d0
+		bne.s	reqstr7 		;if window
+		jmp	error2
+reqstr7:	move.l	d0,a3			;win ptr
+		move.l	wd_RPort(a3),a2         ;rast port ptr
+
+;	display text
+
+		move.b	#2*txtxoff,d1		;1:st y coord
+reqstr2:	cmp.b	d3,d1
+		bge.s	reqstr3 		;if past last gadget
+		move.l	(a4)+,d0                ;pmt ptr
+		beq.s	reqstr3 		;if no more ptrs
+		move.l	d0,a5
+		move.b	#chrw,d0		;1:st x coord
+		move.b	d1,d2
+		move.l	a2,a0			;rast port ptr
+		jsr	genntxt
+		move.b	d2,d1			;y coord
+		add.b	#2*txtxoff,d1		;new y coord
+		bra.s	reqstr2 		;nxt pmt
+
+;	activate gadget and wait for user response
+
+reqstr3:	move.l	a3,a1			;winptr
+		move.l	#inpstr1,a0		;ptr 1:st gad
+		clr.l	d0
+		move.l	d0,a2			;no req
+		jsr	_LVOActivateGadget(a6)
+		move.l	wd_UserPort(a3),a2      ;IDCMP ptr
+		move.b	MP_SIGBIT(a2),d1        ;sigbit #
+		moveq.l #1,d0
+		asl.l	d1,d0			;sigbit mask
+		move.l	_SysBase,a6
+		jsr	_LVOWait(a6)
+		move.l	a2,a0			;IDCMP ptr
+		jsr	_LVOGetMsg(a6)
+		or.l	d0,d0
+		beq.s	reqstr3 		;if no msg
+		move.l	d0,a1			;ptr msg
+		move.l	im_Class(a1),d2         ;IDCMP class
+		move.l	im_IAddress(a1),a2      ;gadget ptr
+		jsr	_LVOReplyMsg(a6)
+		cmp.l	#GADGETUP,d2
+		bne.s	reqstr3 		;if not gadget
+		move.w	gg_GadgetID(a2),d1
+		moveq.l #1,d2			;flg ok gadget
+		cmp.w	#okid,d1
+		beq.s	reqstr6 		;if ok gadget
+		addq.l	#1,d2			;flg cancel gadget
+		cmp.w	#canid,d1
+		bne.s	reqstr3 		;if not cancel gadget
+
+;	close window
+
+reqstr6:	move.l	a3,a0			;win ptr
+		move.l	intbase,a6
+		jmp	_LVOCloseWindow(a6)
+
+;	close/openlog is called by minpeh and can *only*
+;	chg : d0,d1,d2,d3
+;	      a0,a1,a2,a3,a6
+;	it is furthermore called by a menu handling routine and can *only*
+;	chg : d3
+;	      a0,a1,a2,a3,a6
+
+;	closelog
+;	close terminal log file
+;	exit : z=no close
+
+closelog:	movem.l d0-d2,-(a7)
+		move.l	handle2,d1
+		beq.s	closelog1		;if no log file open
+
+;	write buffer and close file
+
+		move.l	logbuf,d2
+		move.l	logcnt,d3
+		beq.s	closelog2		;if buffer empty
+		move.l	_DOSBase,a6
+		jsr	_LVOWrite(a6)
+		move.l	handle2,d1
+closelog2:	clr.l	handle2 		;flg no log
+		jsr	_LVOClose(a6)
+		move.l	#1,d0			;flg success
+closelog1:	movem.l (a7)+,d0-d2
+		rts
+
+;	openlog
+;	open terminal log file
+;	exit : z=no open
+
+openlog:	movem.l d0-d3/a4-a5,-(a7)
+
+;	set up buffer and prompt tables and get file name
+
+		move.l	#inpbuftab,a0
+		move.l	a0,a2
+		move.w	#logfilesize,(a0)+      ;size
+		move.l	#logfile,(a0)+          ;ptr buf
+		move.w	#0,(a0)                 ;end
+		move.l	#inppmttab,a0
+		move.l	a0,a4
+		move.l	#openlogpmt,(a0)+       ;prompt
+		move.l	#0,(a0)                 ;end
+		bsr	reqstr
+		cmp.b	#2,d2
+		beq.s	openlog1		;if cancel
+
+;	open file
+
+		move.l	#logfile,d1		;buf
+		move.l	#MODE_NEWFILE,d2
+		move.l	_DOSBase,a6
+		jsr	_LVOOpen(a6)
+		move.l	d0,handle2
+		beq.s	openlog1		;if failure
+		clr.l	logcnt
+		tst.l	logbuf
+		bne.s	openlog1		;if buffer allocated
+		move.l	#logsiz,d0
+		jsr	xalloc
+		bne.s	openlog2		;if we got memory
+		jmp	error4
+openlog2:	move.l	d0,logbuf		;ptr
+openlog1:	movem.l (a7)+,d0-d3/a4-a5
+		rts
+
+;	sernxt
+;	search for next file
+;	entry : (d2save+2)=z80 fcb ptr, (a4save)=ptr pgm middle
+;		(dmaddr)=ptr to directory entry
+;	exit  : directory entry set up at (dmaddr)
+;		z=no find
+
+sernxt: 	btst.b	#1,flags
+		bne.s	sernxt1
+		rts				;exit if fib & lock not valid
+sernxt1:	move.l	lock1,d4		;lock
+		move.l	fibptr,a5		;file info ptr
+		move.l	_DOSBase,a6		;yes, do not forget this
+		move.l	a4save,d3		;abs fcb ptr
+		add.w	foobar,d3		;z80 fcb ptr
+		bra	serfir5
+
+;	serfir
+;	search for first file
+;	entry : (d2save+2)=z80 fcb ptr, (a4save)=ptr pgm middle
+;		(dmaddr)=ptr to directory entry
+;	exit  : directory entry set up at (dmaddr)
+;		z=no find
+;	chg   : d0,d1,d2,d3,d4
+;		a0,a1,a2,a3,a4,a5,a6
+
+;	23->
+
+serfir: 	bclr.b	#1,flags		;flg fib & lock not valid
+		move.b	#-1,excnt		;flg invalid
+		move.l	fibptr,d0
+		bne.s	serfir1 		;if allocated
+		move.l	#fib_SIZEOF,d0		;size
+		jsr	xalloc
+		bne.s	serfir2 		;if success
+		jmp	error4
+serfir2:	move.l	d0,fibptr
+
+;	get lock to directory
+
+serfir1:	move.l	d0,a5
+		move.w	d2save+2,a3		;z80 fcb ptr
+		add.l	a4save,a3		;abs fcb ptr
+		move.l	a3,d4
+		bsr	xlname
+		move.l	d1,a3
+		move.b	2(a3),d3
+		clr.b	2(a3)                   ;use only dir
+		move.l	ACCESS_READ,d2
+		move.l	_DOSBase,a6
+		jsr	_LVOLock(a6)            ;get lock
+		or.l	d0,d0
+		bne.s	serfir13
+		rts				;exit if no lock
+serfir13:	move.b	d3,2(a3)                ;restore
+		move.l	d4,d3			;ptr fcb
+
+;	get FileInfoBlock for dir
+
+		move.l	d0,d4			;lock
+		move.l	d4,d1			;lock
+		move.l	a5,d2			;fibptr
+		jsr	_LVOExamine(a6)
+		or.l	d0,d0
+		bne.s	serfir14
+		rts				;exit if no success
+serfir14:	move.l	d4,lock1		;save lock
+		bset.b	#1,flags		;flg fib & lock valid
+
+;	entry from sernxt
+
+serfir5:	move.b	excnt,d2
+serfir20:	cmp.b	#-1,d2
+		beq.s	serfir16		;if not valid
+
+;	if valid count
+
+		move.l	d3,a0			;fcb ptr
+		move.b	fcbex-fcb1(a0),d0       ;fcb ex
+		cmp.b	#'?',d0
+		beq.s	serfir17		;if ex wildcard
+		move.b	d0,excnt		;set ex
+		bra.s	serfir19
+
+;	if wildcard in extent count
+
+serfir17:	move.l	fib_Size(a5),d1
+		move.l	#14,d0
+		lsr.l	d0,d1			;/16384, ex count
+		cmp.b	d1,d2
+		ble.s	serfir9 		;if more ex
+
+;	get FileInfoBlock for next file
+
+serfir16:	clr.b	excnt			;1:st ex
+serfir19:	move.l	d4,d1			;lock
+		move.l	a5,d2			;fibptr
+		jsr	_LVOExNext(a6)
+		or.l	d0,d0
+		bne.s	serfir15
+		rts				;exit if no success
+serfir15:	tst.l	fib_DirEntryType(a5)
+		bgt.s	serfir21		;if a directory, try again
+
+;	first file found, check name for cpm compatibility
+;	check if name <= namelen chrs
+
+		move.l	a5,a3			;fibptr
+		add.l	#fib_FileName,a3	;ptr name
+		move.l	#fnbuf,a4		;tmp file name buf
+		move.l	a4,a1
+		move.w	#namelen+typelen,d0
+serfir8:	move.b	#' ',(a1)+
+		dbra	d0,serfir8		;fill tmp with ' '
+		move.w	#namelen,d0
+serfir6:	cmp.b	#'.',(a3)
+		beq.s	serfir4 		;if type separator found
+		tst.b	(a3)
+		beq.s	serfir9 		;if end found
+		move.b	(a3)+,(a4)+             ;to tmp
+		dbra	d0,serfir6		;name loop
+serfir21:	move.b	#-1,d2			;not valid
+		bra	serfir20		;if no cpm name, try again
+
+;	check if type <= typelen chrs
+
+serfir4:	add.w	d0,a4			;skip rest of name
+		addq.l	#1,a3			;skip '.'
+		move.w	#typelen,d0
+serfir7:	tst.b	(a3)
+		beq.s	serfir9 		;if end found
+		move.b	(a3)+,(a4)+             ;to tmp
+		dbra	d0,serfir7		;type loop
+		bra.s	serfir21		;if no cpm type, try again
+
+;	if file checks out
+;	set up directory entry at dma address
+
+serfir9:	move.l	a4save,a2		;ptr pgm middle
+		add.w	dmaddr,a2		;abs ptr file dma
+		move.l	#fnbuf,a1
+		clr.b	(a2)+                   ;drive
+		move.w	#namelen+typelen-1,d0
+serfir10:	cmp.b	#'a',(a1)
+		blt.s	serfir12		;if upper case
+		sub.b	#$20,(a1)               ;to lower
+serfir12:	move.b	(a1)+,(a2)+
+		dbra	d0,serfir10		;move file name
+		move.l	fib_Size(a5),d1
+		move.l	d1,d2
+		move.l	#14,d0
+		lsr.l	d0,d1			;/16384, ex count
+		move.b	excnt,d0
+		cmp.b	d1,d0
+		ble.s	serfir18
+		moveq.l #0,d0			;flg no find
+		rts				;exit if ex too big for file
+serfir18:	beq.s	serfir22		;if last ex
+		move.w	#$ffff,d2		;set max size
+serfir22:	move.b	d0,(a2)+                ;ex
+		addq.b	#1,excnt		;nxt ex
+		clr.b	(a2)+
+		clr.b	(a2)+                   ;clr s1 & s2
+		and.l	#$00003fff,d2
+		move.l	d2,d0
+		and.w	#$7f,d0
+		beq.s	serfir03		;if exact rec
+		add.w	#128,d2 		;add 1 rec
+serfir03:	lsr.l	#7,d2			;/128, rec cnt
+		move.b	d2,(a2)+                ;rc
+		move.w	#fcbcr-fcbd0-1,d0
+serfir11:	clr.b	(a2)+
+		dbra	d0,serfir11		;clr rest
+		moveq.l #1,d2			;flg no error
+		rts
+
+;	xlname xlnameb
+;	translate name from cpm fcb format to amigados format
+;	entry : xlname : a3=fcb ptr, (a4save)=ptr to log pgm start
+;		xlnameb: as xlname + a4=amiga name buffer
+;	exit  : d1=ptr name
+;	chg   : d0,d1
+;		a2,a3,a4
+
+xlname: 	move.l	#fnbuf,a4
+xlnameb:	move.l	a4,-(a7)
+		move.b	(a3)+,d0
+		bne.s	xlname1 		;if not default
+		move.l	a4save,a2		;ptr pgm middle
+		move.b	pzdrv-pagezero(a2),d0   ;def drv
+		addq.b	#1,d0			;fcb format
+xlname1:	add.b	#$40,d0 		;drv letter
+		move.b	d0,(a4)+                ;to name buf
+		move.b	d0,drvlet		;and once again
+		move.b	#':',(a4)+
+
+;	move name and type to buffer
+
+		bclr.l	#31,d0			;flg name loop
+		move.w	#namelen-1,d0		;name cnt
+xlname3:	move.b	(a3)+,d1
+		cmp.b	#' ',d1
+		beq.s	xlname2 		;if end of name
+		move.b	d1,(a4)+                ;to name buf
+		dbra	d0,xlname3		;name loop
+xlname4:	bset.l	#31,d0
+		bne.s	xlname5 		;if type loop
+		move.w	#typelen-1,d0		;type cnt
+		move.b	#'.',(a4)+              ;name/type delimiter
+		bra.s	xlname3 		;enter type loop
+
+;	premature end of name
+
+xlname2:	add.w	d0,a3			;skip empty part of name
+		beq.s	xlname4
+xlname5:	clr.b	(a4)                    ;end of name
+		move.l	(a7)+,d1                ;name ptr
+		rts
+
+;	conchk
+;	check for character from console, receive it if any
+;	exit : d6.b=chr, z=no chr
+;	chg : d0,d1,d6
+;	      a0,a1
+
+conchk: 	move.l	_SysBase,a6
+		move.l	cimport,a0		;con in port ptr
+		jsr	_LVOGetMsg(a6)
+		or.l	d0,d0
+		bne.s	conchk1 		;if msg
+		rts				;exit if no msg
+
+;	message from console
+;	get chr, and queue new request
+
+conchk1:	move.b	conichr,d6		;chr
+		move.l	#conimsg,a1		;ptr IOReq, read
+		move.l	#conichr,cimdata	;data ptr
+		move.l	#1,cimlen
+		jsr	_LVOSendIO(a6)
+		moveq.l #1,d0			;flg chr
+		rts
+
+;	conwait
+;	wait for chr from console
+;	exit : d6.b=chr
+;	chg : d0,d1,d2,d3,d6
+;	      a0,a1,a2,a3,a6
+
+conwait:	bset.b	#2,glflgs		;flg conwait
+		bsr.s	conchk
+		beq.s	conwait1		;if no chr
+		bclr.b	#2,glflgs		;flg no conwait
+		rts
+conwait1:	jsr	minpeh
+		bra.s	conwait 		;get chr
+
+;	conout conout1 conout2
+;	output chr to console
+;	output string to console
+;	entry : conout : d0.b=chr
+;		conout1: (comdata)=ptr to string+<nul>
+;		conout2: (comdata)=ptr to string, (comlen)=length of string
+;	chg :	d0,d1
+;		a0,a1,a6,a7
+
+conout1:	move.l	comdata,a0
+		move.l	a0,d1
+conout4:	tst.b	(a0)+
+		bne.s	conout4 		;if not end
+		sub.l	d1,a0
+		subq.l	#1,a0			;len
+		move.l	a0,comlen
+		bra.s	conout2
+conout: 	move.b	d0,conochr		;data
+		move.l	#conochr,comdata
+		move.l	#1,comlen
+conout2:	movem.l d2-d5,-(a7)
+		move.l	comlen,d3		;for use by Write
+		move.l	comdata,d5
+		move.l	_SysBase,a6
+		move.l	#conomsg,a1		;ptr IOReq, write
+		jsr	_LVODoIO(a6)
+		or.l	d0,d0
+		beq.s	conout3 		;if no error
+		jmp	error6
+
+;	log to file if so requested
+
+conout3:	move.l	handle2,d1
+		beq.s	conout5 		;if no log file
+		move.l	logcnt,d4		;used in buffer
+		add.l	d3,d4
+		cmp.l	#logsiz,d4
+		blt.s	conout6 		;if new data will fit
+
+;	if new data will overflow buffer
+;	write buffer to file
+
+		sub.l	d3,d4			;logcnt
+		exg.l	d3,d4			;logcnt to d3
+		move.l	logbuf,d2
+		move.l	_DOSBase,a6
+		jsr	_LVOWrite(a6)
+		clr.l	logcnt
+		move.l	d4,d3			;new data len
+		cmp.l	#logsiz,d4
+		blt.s	conout6 		;if new data will fit
+		move.l	handle2,d1
+		move.l	d5,d2			;new data ptr
+		jsr	_LVOWrite(a6)
+conout5:	movem.l (a7)+,d2-d5
+		rts
+
+;	put new data in buffer
+;	d3=new data len, d4=total len, d5=ptr new data
+
+conout6:	move.l	d5,a0			;ptr new data
+		sub.l	d3,d4			;d4=present logcnt
+		move.l	logbuf,a1
+		add.l	d4,a1			;ptr into logbuf
+		add.l	d3,d4
+		move.l	d4,logcnt
+		subq.l	#1,d3
+conout7:	move.b	(a0)+,(a1)+
+		dbra	d3,conout7		;move data to buf
+		bra.s	conout5
+
+;	getclin
+;	get one line of data from console
+;	exit on <cr> or full buffer
+;	exit on ^C in pos 1 to main1
+;	convert all other ctrl chrs to ^<chr>
+;	entry : d4=max address + 1, d5=min address
+;		a4=buffer ptr
+;	exit  : a4=ptr last used in buffer + 1
+;		d4,d5 same
+
+;	9->
+
+getclin:	bsr	conwait
+		cmp.b	#$20,d6
+		bge.s	getclin1		;if no ctrl chr
+
+;	control chr
+
+		cmp.b	#3,d6
+		beq.s	getclin4		;if ^C
+		cmp.b	#bs,d6
+		beq.s	getclin5		;if backspace
+		cmp.b	#cr,d6
+		beq.s	getclin6		;if cr
+
+;	unrecognized control chr
+
+getclin8:	move.b	#'^',d0
+		bsr	conout
+		move.b	d6,d0
+		add.b	#$40,d0 		;make real chr
+		bsr	conout
+		bra.s	getclin3
+
+;	normal chr
+
+getclin1:	move.b	d6,d0			;chr
+getclin2:	bsr	conout
+		cmp.b	#'a',d6
+		blt.s	getclin3		;if upper case
+		sub.b	#$20,d6 		;make upper case
+getclin3:	move.b	d6,(a4)+                ;store chr
+		cmp.l	d4,a4
+		blt.s	getclin 		;if not at end
+
+;	cr
+
+getclin6:	rts
+
+;	^C
+
+getclin4:	cmp.l	d5,a4
+		bne.s	getclin8		;if not at start
+		jmp	osexit			;restart cpm
+
+;	backspace
+
+getclin5:	cmp.l	d5,a4
+		beq.s	getclin 		;if at start
+		move.b	-(a4),d0
+		cmp.b	#$20,d0
+		bge.s	getclin7		;if no ctrl chr
+		move.l	#delete,comdata
+		bsr	conout1
+getclin7:	move.l	#delete,comdata
+		bsr	conout1
+		bra	getclin
+
+;	bioscc
+;	bios console check
+;	NOTEZ BIEN !!!
+;	all console status requests should be routed through this routine
+;	exit : d6.b=00 : if no chr, ff if chr
+
+bioscc: 	move.l	_SysBase,a6
+		btst.b	#3,glflgs
+		bne.s	bioscc1 		;if chr (old chk)
+		bsr	conchk
+		beq.s	bioscc2 		;if no chr
+		move.b	d6,conbuf		;chr
+		bset.b	#3,glflgs		;flg chr
+bioscc1:	move.b	#$ff,d6 		;flg chr
+		rts
+
+;	no message
+
+bioscc2:	move.b	#0,d6			;flg no chr in a
+		rts
+
+;	biosci
+;	bios console input
+;	NOTEZ BIEN !!!
+;	all console input should be routed through this routine
+;	exit : d6.b=chr
+
+biosci: 	move.l	_SysBase,a6
+		btst.b	#3,glflgs
+		bne.s	biosci1 		;if old chr
+		bsr	conwait
+		rts
+
+;	old character
+
+biosci1:	bclr.b	#3,glflgs		;flg no chr
+		move.b	conbuf,d6		;old chr
+		rts
+
+;	routines for translating escape sequences
+;	from adm3a to ansi x3.64
+;	entry : a0=ptr to last in buffer +1
+
+;	txlnop
+;	recognized but ignored escape sequences
+;	entry : -
+;	exit  : -
+
+txlnop: 	bra	bdos0611
+
+;	txl27
+;	start reverse video
+;	entry : -
+;	exit  : <csi> 7 m
+
+txl27:		move.l	#txl27d,comdata
+		bra	txl3d4
+
+;	data to be sent to console
+
+txl27d: 	dc.b	csi,'7','m',0
+		ds.w	0			;alignment
+
+;	txl28
+;	end reverse video
+;	entry : -
+;	exit  : <csi> 0 m
+
+txl28:		move.l	#txl28d,comdata
+		bra	txl3d4
+
+;	data to be sent to console
+
+txl28d: 	dc.b	csi,'0','m',0
+		ds.w	0			;alignment
+
+;	txl3d
+;	position cursor
+;	entry : <line+$20> <column+$20> (in hex, line & column starts at 0)
+;	exit  : <csi> <line> ; <column> H (line & columns starts at 1)
+
+txl3d:		move.l	#txl3dd+4,a1		;ptr tx data tens col
+		move.w	#1,d2			;2 numbers
+txl3d3: 	move.b	-(a0),d0                ;col/line+$20
+		sub.b	#$20,d0 		;col/line pos
+		addq.b	#1,d0			;conv to ansi pos
+txl3d2: 	move.b	#-1,d1			;res
+txl3d1: 	addq.b	#1,d1
+		sub.b	#10,d0
+		bcc.s	txl3d1			;if no cy
+		add.b	#$30,d1 		;make ascii tens
+		move.b	d1,(a1)+                ;put in tx data
+		add.b	#$30+10,d0		;make ascii units
+		move.b	d0,(a1)                 ;put in tx data
+		subq.l	#4,a1			;ptr tx data tens line
+		dbra	d2,txl3d3		;do line
+		move.l	#txl3dd,comdata
+txl3d4: 	bsr	conout1
+		bra	bdos0611		;exit
+
+;	data to be sent to console
+
+txl3dd: 	dc.b	csi,0,0,';',0,0,'H',0   ;zeros to be filled in
+		ds.w	0			;alignment
+
+;	txl4b
+;	erase to end line
+;	entry : -
+;	exit  : <csi> <$4b>
+
+txl4b:		move.l	#txl4bd,comdata
+		bra	txl3d4
+
+;	data to be sent to console
+
+txl4bd: 	dc.b	csi,$4b,0
+		ds.w	0			;alignment
+
+;	txl4c
+;	clear and home
+;	entry : -
+;	exit  : <$0c> <csi> H
+
+txl4c:		move.l	#txl4cd,comdata
+		bra	txl3d4
+
+;	data to be sent to console
+
+txl4cd: 	dc.b	$0c,csi,'H',0
+		ds.w	0			;alignment
+
+;	esctab
+;	table for receiving escape sequences
+;	word : sequence character
+;	long : address to translation routine
+;	word : -(number of parameters)
+
+esctab: 	dc.w	$27			;start reverse video
+		dc.l	txl27
+		dc.w	0
+		dc.w	$28			;end reverse video
+		dc.l	txl28
+		dc.w	0
+		dc.w	$2b			;end reduced intensity
+		dc.l	txlnop
+		dc.w	0
+		dc.w	$2c			;start reduced intensity
+		dc.l	txlnop
+		dc.w	0
+		dc.w	$3d			;cursor positioning
+		dc.l	txl3d
+		dc.w	-2
+		dc.w	$4b			;erase to end of line
+		dc.l	txl4b
+		dc.w	0
+		dc.w	$4c			;clear and home
+		dc.l	txl4c
+		dc.w	0
+esctabend:
+
+;	bios functions
+
+;	bios03, wboot
+
+bios03: 	addq.l	#4,a7			;remove ret addr
+		jmp	osexit
+
+;	bios06, const
+;	check for console char ready
+;	exit : a=0 : if no chr, ff if chr
+
+bios06: 	bsr	bioscc
+		move.b	d6,d0save+3		;flg in a
+		bra	bdos0611		;exit
+
+;	bios09, conin
+;	read console character in, wait until character available
+;	exit : a=chr
+
+bios09: 	bsr	biosci
+		move.b	d6,d0save+3		;chr in a
+		bra	bdos0611		;exit
+
+;	bios0c, conout
+;	write console character out
+;	entry : c=chr
+
+bios0c: 	move.b	d3save+3,d0		;c reg
+		bra	bdos0613
+
+;	bios0f, list
+;	write list character out
+;	entry : c=chr
+
+bios0f: 	bra	bdos0611		;exit
+
+;	bios2d, listst
+;	check list status
+;	exit : a=$ff if ready, a=0 if not ready
+
+bios2d: 	clr.b	d0save+3		;flg not rdy
+		bra	bdos0611		;exit
+
+bios00:
+bios12:
+bios15:
+bios18:
+bios1b:
+bios1e:
+bios21:
+bios24:
+bios27:
+bios2a:
+bios30: 	bra	oserr2
+
+;	initialized data
+;	strings
+;	errors, max 27 characters
+;			 123456789012345678901234567
+errtxt1:	dc.b	'Transfer over bios area',0
+errtxt2:	dc.b	'Unimplemented bios function',0
+errtxt3:	dc.b	'Transfer under bdos area',0
+errtxt4:	dc.b	'Transfer between bdos/bios',0
+errtxt5:	dc.b	'Undefined bdos function',0
+errtxt6:	dc.b	'Unimplemented bdos function',0
+errtxt7:	dc.b	'Unimplemented escape seq',0
+errtxt8:	dc.b	'File handle table full',0
+
+;	prompts
+
+openlogpmt:	dc.b	'Enter name of log file',0
+
+;	various
+
+conname:	dc.b	'console.device',0
+delete: 	dc.b	bs,' ',bs,0
+dirsep: 	dc.b	' : ',0
+filetyp:	dc.b	'.com',0
+filetype:
+logfile:	dc.b	'a:cpm.log',0                   ;default string
+logfend:
+		ds.b	logfilesize-(logfend-logfile)   ;fill out
+newline:	dc.b	cr,lf,0
+startmsg:	dc.b	'CP/M 2.2 - Z80 - ADM3A - emulator',cr,lf
+		dc.b	'AmigaDos Bios V1.02',cr,lf
+		dc.b	'Copyright (C) 1988 by Ulf Nordquist !',cr,lf,cr,lf,0
+
+;	cpm console window data area
+;	title
+
+conwinttl:	dc.b	'CP/M Console',0
+
+;	normal console NewWindow struct
+
+conwin: 	dc.w	winx,winy		;top x,y
+		dc.w	conwinw,conwinh 	;width, height
+		dc.b	windp,winbp		;detail, block pen
+		dc.l	0			;idcmp flags
+		dc.l	conwinflg		;window flgs
+		dc.l	0			;ptr 1st gadget
+		dc.l	0			;ptr checkmark
+		dc.l	conwinttl		;ptr title
+		dc.l	0			;ptr screen
+		dc.l	0			;ptr bit map
+		dc.w	winmnw,winmnh		;min width height
+		dc.w	winmxw,winmxh		;max width height
+		dc.w	WBENCHSCREEN		;screen type
+
+;	debug console NewWindow struct
+
+dbgconwin:	dc.w	winx,winy		;top x,y
+		dc.w	dbgconwinw,dbgconwinh	;width, height
+		dc.b	windp,winbp		;detail, block pen
+		dc.l	0			;idcmp flags
+		dc.l	dbgconwinflg		;window flgs
+		dc.l	0			;ptr 1st gadget
+		dc.l	0			;ptr checkmark
+		dc.l	conwinttl		;ptr title
+		dc.l	0			;ptr screen
+		dc.l	0			;ptr bit map
+		dc.w	winmnw,winmnh		;min width height
+		dc.w	winmxw,winmxh		;max width height
+		dc.w	WBENCHSCREEN		;screen type
+
+;	input window data area
+;	input window NewWindow struct
+
+inpwin: 	dc.w	winx,winy		;top x,y
+		dc.w	inpwinw,0		;width, height (setup)
+		dc.b	windp,winbp		;detail, block pen
+		dc.l	GADGETUP		;idcmp flags
+		dc.l	WINDOWDRAG+WINDOWDEPTH+ACTIVATE ;window flags
+		dc.l	inpok			;ptr 1st gadget
+		dc.l	0			;ptr checkmark
+		dc.l	conwinttl		;ptr title
+		dc.l	0			;ptr screen
+		dc.l	0			;ptr bit map
+		dc.w	0,0			;min width height
+		dc.w	0,0			;max width height
+		dc.w	WBENCHSCREEN		;screen type
+
+;	input window gadget structs
+;	Ok
+
+inpok:		dc.l	inpcan			;ptr nxt gadget
+		dc.w	inpokx,inpoky		;top x,y
+		dc.w	inpokw,inpokh		;width, height
+		dc.w	GADGHCOMP+GRELBOTTOM	;flags
+		dc.w	RELVERIFY		;activation
+		dc.w	BOOLGADGET		;gadget type
+		dc.l	inpbox			;ptr gadget render
+		dc.l	0			;ptr select render
+		dc.l	1$			;ptr gadget txt
+		dc.l	0			;mutual exclude
+		dc.l	0			;ptr spec info
+		dc.w	okid			;id#
+		dc.l	0			;ptr user data
+
+;	text to ok gadget
+
+1$:		dc.b	winbp,windp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	0			;word align fill
+		dc.w	inpoktx,2		;top x,y
+		dc.l	0			;ptr font
+		dc.l	2$			;ptr text
+		dc.l	0			;ptr next intui text
+2$:		dc.b	'Ok',0
+
+;	box for ok & cancel gadgets
+
+inpbox: 	dc.w	0,0			;top x,y
+		dc.b	winbp,windp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	(2$-1$)/4               ;# coord pairs
+		dc.l	1$			;ptr coord pairs
+		dc.l	0			;nxt border
+
+;	coordinates for box
+;			x,y
+
+1$:		dc.w	0,0
+		dc.w	0,inpokh-1
+		dc.w	inpokw-1,inpokh-1
+		dc.w	inpokw-1,0
+		dc.w	0,0
+2$:
+
+;	input window gadget structs
+;	cancel
+
+inpcan: 	dc.l	inpstr1 		;ptr nxt gadget
+		dc.w	inpcanx,inpoky		;top x,y
+		dc.w	inpcanw,inpcanh 	;width, height
+		dc.w	GADGHCOMP+GRELBOTTOM	;flags
+		dc.w	RELVERIFY		;activation
+		dc.w	BOOLGADGET		;gadget type
+		dc.l	inpbox			;ptr gadget render
+		dc.l	0			;ptr select render
+		dc.l	1$			;ptr gadget txt
+		dc.l	0			;mutual exclude
+		dc.l	0			;ptr spec info
+		dc.w	canid			;id#
+		dc.l	0			;ptr user data
+
+;	text to cancel gadget
+
+1$:		dc.b	winbp,windp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	0			;word align fill
+		dc.w	2,2			;top x,y
+		dc.l	0			;ptr font
+		dc.l	2$			;ptr text
+		dc.l	0			;ptr next intui text
+2$:		dc.b	'Cancel',0
+
+;	input window gadget structs
+;	first string
+
+inpstr1:	dc.l	0			;ptr nxt gadget
+		dc.w	inpstrx,0		;top x,y (setup)
+		dc.w	inpstrw,inpstrh 	;width, height
+		dc.w	SELECTED+GADGHCOMP	;flags
+		dc.w	RELVERIFY		;activation
+		dc.w	STRGADGET		;gadget type
+		dc.l	inpboxs 		;ptr gadget render
+		dc.l	0			;ptr select render
+		dc.l	0			;ptr gadget txt
+		dc.l	0			;mutual exclude
+		dc.l	inpstr1info		;ptr spec info
+		dc.w	strid			;id#
+		dc.l	0			;ptr user data
+
+;	special info for first string gadget
+
+inpstr1info:	dc.l	0			;ptr buffer (setup)
+		dc.l	undobuf 		;ptr undo buffer
+		dc.w	0			;init buf pos
+		dc.w	strbufsiz		;buf size (setup)
+		dc.w	0			;pos of 1:st disp chr
+		dc.w	0			;pos in undo buf
+		dc.w	0			;# chr in buf
+		dc.w	0			;# chr disp
+		dc.w	0,0			;top x,y
+		dc.l	0			;ptr layer
+		dc.l	0			;result if int gadget
+		dc.l	0			;ptr alt key map
+
+;	box for string cancel gadget
+
+inpboxs:	dc.w	-2,-2			 ;top x,y
+		dc.b	winbp,windp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	(2$-1$)/4               ;# coord pairs
+		dc.l	1$			;ptr coord pairs
+		dc.l	0			;nxt border
+
+;	coordinates for box
+;			x,y
+
+1$:		dc.w	0,0
+		dc.w	0,inpstrh
+		dc.w	inpstrw,inpstrh
+		dc.w	inpstrw,0
+		dc.w	0,0
+2$:
+
+;	tables for buffer and prompt pointers
+;	set up by caller
+
+inpbuftab:	ds.b	2+4
+inppmttab:	ds.l	1
+
+;	parameters set up by pzinit
+;	area 1 : $0000-$0007
+
+pz1:		dc.w	pz2-pz1-4-1		;len of 1:st
+		dc.w	0			;rel addr of 1:st
+pagezero:	dc.b	z80jp			;0 z80 jp
+		dc.b	bioslo+3		;1
+		dc.b	bioshi			;2 WBOOT in bios table
+		dc.b	iobyte			;3
+pzdrv:		dc.b	defdrv			;4 default drive
+		dc.b	z80jp			;5 z80 jp
+		dc.b	fbaselo 		;6
+		dc.b	fbasehi 		;7 FBASE:
+
+;	area 2 : $005c-$007b fcb1 & fcb2
+
+pz2:		dc.w	pz3-pz2-4-1		;len of 2:nd
+		dc.w	fcb1			;rel addr of 2nd
+		dc.b	0			;$5c fcb1 drive
+		dc.b	' '                     ;$5d fcb1 n1
+		dc.b	' '                     ;$5e fcb1 n2
+		dc.b	' '                     ;$5f fcb1 n3
+		dc.b	' '                     ;$60 fcb1 n4
+		dc.b	' '                     ;$61 fcb1 n5
+		dc.b	' '                     ;$62 fcb1 n6
+		dc.b	' '                     ;$63 fcb1 n7
+		dc.b	' '                     ;$64 fcb1 n8
+		dc.b	' '                     ;$65 fcb1 t1
+		dc.b	' '                     ;$66 fcb1 t2
+		dc.b	' '                     ;$67 fcb1 t3
+		dc.b	0			;$68 fcb1 ex
+		dc.b	0			;$69 fcb1 s1
+		dc.b	0			;$6a fcb1 s2
+		dc.b	0			;$6b fcb1 rc
+		dc.b	0			;$6c fcb2 drive
+		dc.b	' '                     ;$6d fcb2 n1
+		dc.b	' '                     ;$5e fcb2 n2
+		dc.b	' '                     ;$5f fcb2 n3
+		dc.b	' '                     ;$70 fcb2 n4
+		dc.b	' '                     ;$71 fcb2 n5
+		dc.b	' '                     ;$72 fcb2 n6
+		dc.b	' '                     ;$73 fcb2 n7
+		dc.b	' '                     ;$74 fcb2 n8
+		dc.b	' '                     ;$75 fcb2 t1
+		dc.b	' '                     ;$76 fcb2 t2
+		dc.b	' '                     ;$77 fcb2 t3
+		dc.b	0			;$78 fcb2 ex
+		dc.b	0			;$79 fcb2 s1
+		dc.b	0			;$7a fcb2 s2
+		dc.b	0			;$7b fcb2 rc
+
+;	area 3 : disk parameter block
+
+pz3:		dc.w	pz4-pz3-4-1		;len of 3:rd
+		dc.w	dpb			;rel addr of 3:rd
+		dc.b	spt
+		dc.b	0			;SPT sectors per track, 16b
+		dc.b	bsh			;BSH block shift factor, 8b
+		dc.b	blm			;BLM block mask, 8b
+		dc.b	exm			;EXM extent mask, 8b
+		dc.b	dsm&$000000ff
+		dc.b	dsm>>8			;DSM, 16b
+		dc.b	drm&$000000ff
+		dc.b	drm>>8			;DRM dir entries - 1, 16b
+		dc.b	al0			;AL0, 8b
+		dc.b	al1			;AL1, 8b
+		dc.b	cks&$000000ff
+		dc.b	cks>>8			;CKS, 16b
+		dc.b	off&$000000ff
+		dc.b	off>>8			;OFF, 16b
+
+;	area 4 : empty
+
+pz4:		dc.w	0			;len of 4:th, mark end
+
+;	bdostab
+;	jump table for bdos functions
+
+bdostab:	dc.l	bdos00
+		dc.l	bdos01
+		dc.l	bdos02
+		dc.l	bdos03
+		dc.l	bdos04
+		dc.l	bdos05
+		dc.l	bdos06
+		dc.l	bdos07
+		dc.l	bdos08
+		dc.l	bdos09
+		dc.l	bdos10
+		dc.l	bdos11
+		dc.l	bdos12
+		dc.l	bdos13
+		dc.l	bdos14
+		dc.l	bdos15
+		dc.l	bdos16
+		dc.l	bdos17
+		dc.l	bdos18
+		dc.l	bdos19
+		dc.l	bdos20
+		dc.l	bdos21
+		dc.l	bdos22
+		dc.l	bdos23
+		dc.l	bdos24
+		dc.l	bdos25
+		dc.l	bdos26
+		dc.l	bdos27
+		dc.l	bdos28
+		dc.l	bdos29
+		dc.l	bdos30
+		dc.l	bdos31
+		dc.l	bdos32
+		dc.l	bdos33
+		dc.l	bdos34
+		dc.l	bdos35
+		dc.l	bdos36
+		dc.l	bdos37
+		dc.l	oserr5		;38 is undefined in cpm
+		dc.l	oserr5		;39 is undefined in cpm
+		dc.l	bdos40
+bdostabend:
+
+;	biostab
+;	jump table for bios functions
+;	max length in z80 program area $40
+
+biostab:	dc.l	bios00		;0
+		dc.l	bios03		;1
+		dc.l	bios06		;2
+		dc.l	bios09		;3
+		dc.l	bios0c		;4
+		dc.l	bios0f		;5
+		dc.l	bios12		;6
+		dc.l	bios15		;7
+		dc.l	bios18		;8
+		dc.l	bios1b		;9
+		dc.l	bios1e		;a
+		dc.l	bios21		;b
+		dc.l	bios24		;c
+		dc.l	bios27		;d
+		dc.l	bios2a		;e
+		dc.l	bios2d		;f
+		dc.l	bios30		;10
+biostabend:
+
+;	handles and associated filenames for CPM transient
+
+handles:	dc.l	0		;handle
+hnd1:		ds.l	3		;name, from FCB
+hnd2:		dc.l	0
+		ds.l	3
+		dc.l	0
+		ds.l	3
+		dc.l	0
+		ds.l	3
+		dc.l	0
+		ds.l	3
+hndend:
+
+hanentsiz	equ	hnd2-handles	;size of one entry
+hannamsiz	equ	hnd2-hnd1	;size of one name entry
+maxhan		equ	(hndend-handles)/hanentsiz ;maximal number of handles
+
+;	various
+
+excnt:		dc.b	-1		;ex counter for search directory
+fibptr: 	dc.l	0		;ptr to file info area
+flags:		dc.b	0		;bit 0 : esc seq decoding
+					;    1 : lock1 and fib valid
+handle2:	dc.l	0		;file handle for log file
+lock1:		dc.l	0		;file lock for search directory
+logbuf: 	dc.l	0		;ptr to log file buffer
+
+;	console MsgPort
+
+conmsgp:	dcb.l	2,0			;succ,pred ptrs
+		dc.b	NT_MSGPORT		;type
+		dc.b	0			;priority
+		dc.l	conmsgpn		;name ptr	--- node
+		dc.b	PA_SIGNAL		;action
+conmsgpsb:	dc.b	$ff			;signalbit #
+conmsgpt:	dc.l	0			;task ptr	--- msg
+2$:		dc.l	3$			;head ptr
+3$:		dc.l	0
+		dc.l	2$			;tail ptr
+		dc.b	NT_MSGPORT		;type
+		dc.b	0			;word align	--- list
+
+conmsgpn:	dc.b	'CPMConsolePort',0
+
+;	console device IOStdReq, read
+
+conimsg:	dcb.w	7,0			;Node struct
+cimport:	dc.l	conmsgp 		;msg port ptr
+		dc.w	cimend-cimdev		;msg size
+cimdev: 	dc.l	0			;ptr Device
+cimunit:	dc.l	0			;ptr Unit
+		dc.w	CMD_READ		;command
+		dc.b	0			;flags
+		dc.b	0			;error
+		dc.l	0			;actual, byte cnt
+cimlen: 	dc.l	0			;length, byte cnt
+cimdata:	dc.l	0			;data ptr
+		dc.l	0			;offset
+cimend:
+
+;	console device IOStdReq, write
+
+conomsg:	dcb.w	7,0			;Node struct
+comport:	dc.l	0			;msg port ptr
+		dc.w	comend-comdev		;msg size
+comdev: 	dc.l	0			;ptr Device
+comunit:	dc.l	0			;ptr Unit
+		dc.w	CMD_WRITE		;command
+		dc.b	0			;flags
+		dc.b	0			;error
+		dc.l	0			;actual, byte cnt
+comlen: 	dc.l	0			;length, byte cnt
+comdata:	dc.l	0			;data ptr
+		dc.l	0			;offset
+comend:
+
+;	not initialized data
+;	to save registers
+
+d0save: 	ds.l	1
+d1save: 	ds.l	1
+d2save: 	ds.l	1
+d3save: 	ds.l	1
+d4save: 	ds.l	1
+d5save: 	ds.l	1
+d7save: 	ds.l	1
+a0save: 	ds.l	1
+a1save: 	ds.l	1
+a2save: 	ds.l	1
+a3save: 	ds.l	1
+a4save: 	ds.l	1
+a6save: 	ds.l	1
+
+foobar		equ	d2save+2
+
+;	various
+
+conbuf: 	dc.b	1		;console read buffer for bios 06,09
+conichr:	dc.l	1		;read chr for con
+conochr:	dc.l	1		;write chr for con
+escptr: 	ds.w	1		;rx cnt for esc seq
+buffer: 	ds.b	8		;8 byte esc seq rx buffer
+escrx:					;end of rx buffer+1
+dmaddr: 	ds.w	1		;current cpm dma address
+drvlet: 	ds.b	1		;xlname saves drive letter
+escseq: 	ds.b	1		;current esc seq
+escxlt: 	ds.l	1		;address to esc xlate routine
+fnbuf:		ds.b	1+1+8+1+3+1	;buffer for filename
+fnbufe:
+fnbuf2: 	ds.b	1+1+8+1+3+1	;secondary buffer for filename
+fnbuf2e:
+logcnt: 	ds.l	1		;byte count in logbuf
+undobuf:	ds.b	strbufsiz	;undo buf for str gadgets
+
+		end
+

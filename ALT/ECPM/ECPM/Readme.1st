@@ -1,0 +1,40 @@
+
+  This archive file, of which this file is a part, is being submitted to
+Fred Fish for possible inclusion into the Fred Fish 'Freely Redistributable
+Software Library'.  If included, the files listed below will be part of a
+single directory on the disk and not members of an archive file.
+
+  This CP/M emulator consists of the following files:
+
+    1. -ReadMe.1st  - what you are reading now
+    2. ecpm         - the CP/M emulator, ready to run
+    3. ecpmt        - the tracing version of the emulator, ready to run
+    4. ecpm.doc     - instructions for using the emulator
+    5. update.doc   - ramblings by the author of this new version
+
+  These are needed only if you intend to create a new version:
+
+    6. ecpm1.asm    - part 1 of the assembly language source file
+    7. ecpm2.asm    - part 2 of the assembly language source file
+    8. ecpmdefs.i   - common definitions needed by both parts
+    9. ecpmt.hdr    - header file needed for tracing version
+   10. assemble.doc - what you need to create a new version
+   11. alecpm       - see 'assemble.doc' for instructions
+   12. alecpmt      - see 'assemble.doc' for instructions
+
+  Now for the commercial:
+
+       KMMM Pascal BBS
+       (609) 232-0773
+       24 hours a day
+       7 days a week
+       300/1200/2400/9600 bps
+       9600 is USRobotics HST protocol
+       Passing a simple IQ test required for full access
+
+  This file created by:
+       Willi Kusche
+       SYSOP
+       KMMM Pascal BBS
+       June 30, 1988
+

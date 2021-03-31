@@ -1,0 +1,19 @@
+#!/bin/sh
+# Time each executable, twice.  Try to avoid built-in shell timer.
+
+TIME=time
+if [ -x /bin/time ] ; then
+    TIME=/bin/time
+else
+    if [ -x /usr/bin/time ] ; then
+	TIME=/usr/bin/time
+    fi
+fi
+
+for file in $@; do
+    if [ -x $file ]; then
+       echo $file
+       (cd testprogs && $TIME ../$file mac keycon) 2>&1
+       (cd testprogs && $TIME ../$file mac keycon) 2>&1
+    fi
+done

@@ -1,0 +1,19 @@
+/*
+   A link control file for a 68000/68010 version that will work
+   using short addresses (for speed).  The trick is to get the
+   simulation subroutines all located below the 32k mark.
+*/
+
+MEMORY {
+	valid : org=0x4000,len=0x80000
+}
+
+SECTIONS {
+	GROUP 0x40A8 : {
+		.text : {}
+	}
+	GROUP 0x20000 : {
+		.data : {}
+		.bss : {}
+	}
+}

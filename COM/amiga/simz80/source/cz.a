@@ -1,0 +1,1969 @@
+;	Z80 - CP/M emulator for Amiga
+;	Main program
+
+		section cz,code
+
+main:		bra	main2
+
+czver:		dc.b	'Cz    Ver: 00054   Date: 25-Sep-88 21:04:06 ',0
+
+;	This source code is released into the public domain for
+;	non-profit use only.
+;	Copyright (C) 1988, Ulf Nordquist. All Rights Reserved !
+;	Ulf Nordquist
+;	Brunnehagen 36
+;	417 47 Gothenburg
+;	Sweden
+
+;	About message
+;			     1	       2	 3	   4	     5
+;		     12345678901234567890123456789012345678901234567890
+abouttext:  dc.b    '----------Z80, ADM3A and CP/M emulator-----------',0 ;1
+	    dc.b    ' ',0                                                 ;2
+	    dc.b    'This software is released into the public domain',0  ;3
+	    dc.b    'for non-profit use only.',0                          ;4
+	    dc.b    'Copyright (C) 1988 !            Ulf Nordquist.',0    ;5
+	    dc.b    'All Rights Reserved !           Brunnehagen 36',0    ;6
+	    dc.b    'Bug reports and comments        417 47 Gothenburg',0 ;7
+	    dc.b    'are very welcome.               Sweden',0            ;8
+	    dc.b    0	    ;end mark
+;		     12345678901234567890123456789012345678901234567890
+
+;	constants
+
+aboutcolumns	equ	50
+aboutlines	equ	8
+
+;	History
+;	870728 : windowing code copied from rf
+;		 z80 processor window
+;	870729 : bth
+;	870731 : read file into z80 program area
+;		 z80 emulator one byte opcodes
+;	871018 : move z80emu to zek
+;	871027 : step gadget struct
+;	871104 : wait for IDCMP in emulator loop
+;	871107 : offset for file load
+;		 htb
+;	871108 : set pc to start at offset
+;	871111 : console window
+;	871113 : init cpm
+;	871114 : console window data to ce
+;		 error5,6
+;	871115 : error msgs to _stderr
+;		 menu for cosole window with project-quit
+;	871120 : requesters
+;		 z80opcni
+;		 memtz80 z80tmem
+;	871121 : openz80win, closez80win
+;		 console menu windows-z80 processor
+;		 program start offset is now always $100
+;		 command line flag s
+;		 run/stop gadget in z80 window
+;	871122 : unimplemented opcode requester shows opcode no
+;		 oserr
+;	871206 : remove auto read file at startup & s flg
+;		 no auto start of z80 window
+;	871207 : disz80
+;	871211 : minpeh
+;	871216 : osexit
+;	871217 : explanation text in oserr requester
+;	871223 : emuinit
+;	880124 : console menu project -about V0.6
+;	880127 : reset gadget in z80 window
+;	880221 : z80opc2ni
+;	880224 : glflgs bit 4
+;		 console menu terminal-esc seq trap
+;	880227 : change main loop to include all memory init
+;	880306 : reset is osexit
+;	880307 : console menu terminal-log to file
+;	880430 : ver 00001
+;	880710 : debug menue count & save count
+;	880711 : move emuinit out of cpm reset loop
+;		 remove push & pop macros
+;	880713 : debug menue trace
+;	880716 : change about window
+;		 project menue version
+;	880910 : include the essential startup code here
+;	880924 : ireg
+
+;	globals from this module
+
+		xdef	_DOSBase
+		xdef	_SysBase
+		xdef	bth16
+		xdef	conwinptr
+		xdef	error2
+		xdef	error4
+		xdef	error5
+		xdef	error6
+		xdef	genntxt
+		xdef	gg_GadgetID
+		xdef	gg_NextGadget
+		xdef	gg_SpecialInfo
+		xdef	gg_TopEdge
+		xdef	glflgs
+		xdef	ireg
+		xdef	im_Class
+		xdef	im_IAddress
+		xdef	intbase
+		xdef	minpeh
+		xdef	MP_SIGBIT
+		xdef	oserr
+		xdef	osexit
+		xdef	wd_RPort
+		xdef	wd_Size
+		xdef	wd_UserPort
+		xdef	winbp
+		xdef	windp
+		xdef	winmnh
+		xdef	winmxh
+		xdef	winmnw
+		xdef	winmxw
+		xdef	xalloc
+		xdef	z80opc2ni
+		xdef	z80opcni
+		xdef	z80pgmptr
+		xdef	z80pgmsiz
+		xdef	z80pc
+		xdef	z80sp
+		xdef	z80winptr
+
+;	externals from zek
+
+		xref	emuinit
+		xref	savecnt
+		xref	startcnt
+		xref	stopcnt
+		xref	starttrc
+		xref	stoptrc
+		xref	zekver
+		xref	z80emu
+		xref	z80emucont
+
+;	externals from ce
+
+		xref	cever
+		xref	closelog
+		xref	comdata
+		xref	conchk
+		xref	conmsgpsb
+		xref	conout1
+		xref	conwin
+		xref	dbgconwin
+		xref	newline
+		xref	openlog
+		xref	osclose
+		xref	osrun
+
+;	externals from zekcb
+
+		xref	zekcbver
+
+;	externals from zekdd
+
+		xref	zekddver
+
+;	externals from zeked
+
+		xref	zekedver
+
+;	externals from exec.library
+
+		xref	_LVOCloseLibrary
+		xref	_LVOGetMsg
+		xref	_LVOFindTask
+		xref	_LVOReplyMsg
+		xref	_LVOOpenLibrary
+		xref	_LVOWait
+
+;	externals from intuition.library
+
+		xref	_LVOAllocRemember
+		xref	_LVOAutoRequest
+		xref	_LVOClearMenuStrip
+		xref	_LVOCloseWindow
+		xref	_LVOFreeRemember
+		xref	_LVOIntuiTextLength
+		xref	_LVOItemAddress
+		xref	_LVOModifyIDCMP
+		xref	_LVOOffMenu
+		xref	_LVOOnMenu
+		xref	_LVOOpenWindow
+		xref	_LVOPrintIText
+		xref	_LVOSetMenuStrip
+
+;	externals from dos.library
+
+		xref	_LVOOutput
+		xref	_LVOWrite
+
+;	equates
+;	include/exec
+
+_AbsExecBase	equ	4
+
+;	include/exec/memory.i
+
+MEMF_ANY	equ	0
+TRUE		equ	-1
+
+;	include/exec/ports.i
+
+MP_SIGBIT	equ	15		;rel ptr to message port sigbit #
+
+;	include/graphics/rastport.i
+
+RP_JAM1 	equ	0
+RP_JAM2 	equ	1
+
+;	include/intuition/intuition.i
+;	various
+
+BOOLGADGET	equ	$0001
+CHECKED 	equ	$0100
+CHECKIT 	equ	$0001
+CHECKWIDTH	equ	19
+CLOSEWINDOW	equ	$00000200
+GADGETUP	equ	$00000040
+GADGHCOMP	equ	$0000
+HIGHCOMP	equ	$0040
+ITEMENABLED	equ	$0010
+ITEMTEXT	equ	$0002
+MENUENABLED	equ	$0001
+MENUNULL	equ	$ffff
+MENUPICK	equ	$00000100
+RELVERIFY	equ	$0001
+WBENCHSCREEN	equ	$0001
+WINDOWCLOSE	equ	$0008
+WINDOWDEPTH	equ	$0004
+WINDOWDRAG	equ	$0002
+WINDOWSIZING	equ	$0001
+
+;	relative pointers into gadget structure
+
+gg_NextGadget	equ	0
+gg_LeftEdge	equ	4
+gg_TopEdge	equ	6
+gg_Width	equ	8
+gg_Height	equ	10
+gg_Flags	equ	12
+gg_Activation	equ	14
+gg_GadgetType	equ	16
+gg_GadgetRender equ	18
+gg_SelectRender equ	22
+gg_GadgetText	equ	26
+gg_MutualExclude equ	30
+gg_SpecialInfo	equ	34
+gg_GadgetID	equ	38
+gg_UserData	equ	40
+gg_SIZEOF	equ	44
+
+;	relative pointers into intuimessage structure
+
+im_ExecMessage	equ	0
+im_Class	equ	20
+im_Code 	equ	24
+im_Qualifier	equ	26
+im_IAddress	equ	28
+im_MouseX	equ	32
+im_MouseY	equ	34
+im_Seconds	equ	36
+im_Micros	equ	40
+im_IDCMPWindow	equ	44
+im_SpecialLink	equ	48
+im_SIZEOF	equ	52
+
+;	relative pointers into menuitem structure
+
+mi_NextItem	equ	0
+mi_LeftEdge	equ	4
+mi_TopEdge	equ	6
+mi_Width	equ	8
+mi_Height	equ	10
+mi_Flags	equ	12
+mi_MutualExclude equ	14
+mi_ItemFill	equ	18
+mi_SelectFill	equ	22
+mi_Command	equ	26
+mi_KludgeFill00 equ	27
+mi_SubItem	equ	28
+mi_NextSelect	equ	32
+mi_SIZEOF	equ	34
+
+;	relative pointers into window structure
+
+wd_NextWindow	equ	0
+wd_LeftEdge	equ	4
+wd_TopEdge	equ	6
+wd_Width	equ	8
+wd_Height	equ	10
+wd_MouseY	equ	12
+wd_MouseX	equ	14
+wd_MinWidth	equ	16
+wd_MinHeight	equ	18
+wd_MaxWidth	equ	20
+wd_MaxHeight	equ	22
+wd_Flags	equ	24
+wd_MenuStrip	equ	28
+wd_Title	equ	32
+wd_FirstRequest equ	36
+wd_DMRequest	equ	40
+wd_ReqCount	equ	44
+wd_WScreen	equ	46
+wd_RPort	equ	50
+wd_BorderLeft	equ	54
+wd_BorderTop	equ	55
+wd_BorderRight	equ	56
+wd_BorderBottom equ	57
+wd_BorderRPort	equ	58
+wd_FirstGadget	equ	62
+wd_Parent	equ	66
+wd_Descendant	equ	70
+wd_Pointer	equ	74
+wd_PtrHeight	equ	78
+wd_PtrWidth	equ	79
+wd_XOffset	equ	80
+wd_YOffset	equ	81
+wd_IDCMPFlags	equ	82
+wd_UserPort	equ	86
+wd_WindowPort	equ	90
+wd_MessageKey	equ	94
+wd_DetailPen	equ	98
+wd_BlockPen	equ	99
+wd_CheckMark	equ	100
+wd_ScreenTitle	equ	104
+wd_GZZMouseX	equ	108
+wd_GZZMouseY	equ	110
+wd_GZZWidth	equ	112
+wd_GZZHeight	equ	114
+wd_ExtData	equ	116
+wd_UserData	equ	120
+wd_WLayer	equ	124
+wd_Size 	equ	128
+
+;	include/libraries/dosextens.i
+
+pr_CLI		equ	172	;bptr, to ConsoleLineInterpreter
+
+;	ascii control
+
+cr		equ	$0d
+lf		equ	$0a
+
+;	various
+
+buflen		equ	32		;scratch buffer byte length
+chrh		equ	7		;character height
+chrw		equ	8		;character width
+errcode 	equ	50		;exit code at error
+libver		equ	33		;library version
+osxfer		equ	$ed01		;opcode for cpm emulator transfer
+runcnt		equ	1000		;instruction per loop in run mode
+z80pgmsiz	equ	$10000		;size of z80 program area
+
+;	common for all windows
+
+winx		equ	0		;initial x pos of top left corner
+winy		equ	0		;initial y pos of top left corner
+winmxw		equ	640		;max width
+winmnw		equ	200		;min width
+winmxh		equ	200		;max height
+winmnh		equ	60		;min height
+windp		equ	0		;detail pen
+winbp		equ	1		;block pen
+
+;	z80 processor window
+;	size
+
+z80winw 	equ	260		;width
+z80winh 	equ	70		;height
+
+;	step gadget
+
+stepid		equ	10		;id#
+z80stpx 	equ	10		;top x
+z80stpy 	equ	z80winh-15	;top y
+z80stpw 	equ	4*chrw+2	;width
+z80stph 	equ	chrh+2		;height
+
+;	run/stop gadget
+
+rsid		equ	11		;id#
+z80rsx		equ	z80stpx+z80stpw+10 ;top x
+z80rsy		equ	z80stpy 	;top y
+z80rsw		equ	4*chrw+2	;width
+z80rsh		equ	chrh+2		;height
+
+;	reset gadget
+
+resid		equ	12		;id#
+z80resx 	equ	z80rsx+z80rsw+10 ;top x
+z80resy 	equ	z80stpy 	;top y
+z80resw 	equ	5*chrw+2	;width
+z80resh 	equ	chrh+2		;height
+
+;	about window
+;	size
+
+aboutwinw	equ	(aboutcolumns+2)*chrw ;width
+aboutwinh	equ	(aboutlines+2)*(chrh+2) ;height
+
+;	version window
+;	size
+
+verwinw 	equ	aboutwinw	;width
+verwinh 	equ	(6+1+2)*(chrh+2) ;(mod+task+marg) height
+
+;	console menu strip
+
+projectmenu	equ	0
+aboutitem	equ	0
+veritem 	equ	1
+quititem	equ	2
+
+windowsmenu	equ	1
+z80pitem	equ	0
+
+terminalmenu	equ	2
+escseqitem	equ	0
+logitem 	equ	1
+
+debugmenu	equ	3
+countitem	equ	0
+savecitem	equ	1
+traceitem	equ	2
+
+;	requesters
+
+reqh		equ	62		;height
+reqoffx 	equ	6
+reqoffy 	equ	3
+reqwadd 	equ	25		;extra width
+abreqh		equ	reqh+(6-2)*chrh ;about requester height
+
+;	the program continues here
+;	5-11,13,14,17,18,20->
+
+		ds.w	0			;alignment
+
+main2:		move.l	sp,spsave
+		move.l	_AbsExecBase,a6
+		move.l	a6,_SysBase
+
+;	check if started from CLI
+
+		suba.l	a1,a1
+		jsr	_LVOFindTask(a6)
+		move.l	d0,a4
+		tst.l	pr_CLI(A4)
+		beq	errexit 		;if no CLI ptr
+
+;	open DOS
+
+		move.l	#doslib,a1		;ptr name string
+		move.l	#libver,d0		;ver #
+		jsr	_LVOOpenLibrary(a6)
+		move.l	d0,_DOSBase
+		beq	errexit 		;if no DOS
+
+;	open intuition
+
+		move.l	#intlib,a1		;ptr name string
+		move.l	#libver,d0		;ver #
+		jsr	_LVOOpenLibrary(a6)
+		or.l	d0,d0
+		beq	error1			;if no intuition
+		move.l	d0,intbase
+
+;	allocate needed memory
+
+		move.l	#z80pgmsiz,d0
+		bsr	xalloc			;z80 memory area
+		beq	error3			;if no place
+		move.l	d0,z80pgmptr
+		move.l	d0,d7
+
+;	open console window and attach IDCMP and menu
+
+		move.l	#conwin,a0		;normal window ptr
+		tst.b	debug
+		beq.s	main3			;if no debug
+		move.l	#dbgconwin,a0		;debug window ptr
+main3:		move.l	intbase,a6
+		jsr	_LVOOpenWindow(a6)
+		or.l	d0,d0
+		beq	error2			;if no window
+		move.l	d0,conwinptr		;window ptr
+		move.l	d0,d2
+		move.l	d0,a0			;con win ptr
+		move.l	#MENUPICK,d0		;flgs
+		jsr	_LVOModifyIDCMP(a6)
+		move.l	d2,a0			;con win ptr
+		move.l	#conmenu,a1
+		jsr	_LVOSetMenuStrip(a6)
+		jsr	emuinit
+
+;	main restart entry
+;	entry from reset and exit from running program
+;	setup z80 registers
+
+main1:		move.l	spsave,sp		;set sp
+		move.w	#0+(z80regend-z80regstart)/2-1,d0
+		move.l	#z80regstart,a0
+main4:		clr.w	(a0)+
+		dbra	d0,main4		;clr regs
+		clr.b	ireg			;and ireg
+
+;	console command processor
+
+		move.w	#osxfer,d0		;cpm opcode
+		jsr	osrun
+
+;	BIG emulator loop
+
+main12: 	bsr	disz80			;update z80 display
+
+;	SMALL emulator loop
+
+main15: 	bsr	minpeh			;handle IDCMP
+
+;	move from memory to registers
+
+		move.l	#runcnt,d7
+		btst.b	#0,glflgs
+		beq.s	main16			;if z80 run
+		moveq.l #1,d7
+main16: 	move.l	z80pgmptr,a4
+		bsr	memtz80
+		jsr	z80emu
+
+;	move from registers to memory
+
+		bsr	z80tmem
+		btst.b	#0,glflgs
+		bne	main12			;if z80stopped, big loop
+		bra	main15			;quick loop
+
+;	error end cleanup
+
+errexit:	move.l	#errcode,d7
+		bra.s	exit7
+
+;	normal end cleanup
+;	8->
+
+exit:		clr.l	d7			;no error
+
+;	deallocate all memory
+
+exit7:		jsr	osclose
+		move.l	intbase,d0
+		beq.s	exit6			;if no intuition
+		move.l	d0,a6
+		move.l	#remkey,a0
+		move.l	#TRUE,d0
+		jsr	_LVOFreeRemember(a6)
+
+;	remove menus
+
+exit6:		move.l	conwinptr,d0		;window ptr
+		beq.s	exit5			;if no window
+		move.l	d0,a0
+		jsr	_LVOClearMenuStrip(a6)
+
+;	close all windows
+
+exit5:		move.l	#winstart,a5		;ptr 1:st win ptr
+exit1:		move.l	(a5)+,d0
+		beq.s	exit1			;if no ptr
+		cmp.l	#$ffffffff,d0
+		move.l	d0,a0
+		beq.s	exit2			;if end of win ptrs
+		jsr	_LVOCloseWindow(a6)
+		bra.s	exit1
+
+;	close all libraries
+
+exit2:		move.l	#libstart,a5		;ptr 1:st lib ptr
+exit3:		move.l	(a5)+,d0
+		beq.s	exit3			;if no ptr
+		cmp.l	#$ffffffff,d0
+		beq.s	exit4			;if end of lib ptrs
+		move.l	d0,a1
+		move.l	_SysBase,a6
+		jsr	_LVOCloseLibrary(a6)
+		bra.s	exit3
+exit4:		move.l	d7,d0			;errcode
+		move.l	spsave,sp		;defensive programming
+		rts
+
+;	osexit
+;	exit from emulation, exit from currently running program
+
+osexit: 	move.l	#newline,comdata
+		jsr	conout1
+		bra	main1			;re-enter main loop
+
+;	oserr
+;	display requester and get answer when error in cpm emulator
+;	entry : regs as during emulation
+;		d6.w=ffee, ff=function number, ee=error number
+;		a5.l=ptr to 2:nd text
+
+oserr:		bsr	z80tmem 		;save z80 regs
+		move.l	#cereqbtd1,a0
+		move.w	#1,d4			;2 no:s
+oserr1: 	move.b	2(a0),d5
+		move.b	d6,d0			;err #
+		bsr	bth8
+		move.b	d5,(a0)                 ;restore
+		rol.w	#8,d6			;move fun #
+		move.l	#cereqbtd2,a0
+		dbra	d4,oserr1		;loop
+		move.l	#cereqbt1,d6		;body txt ptr
+		move.l	a5,cereqbt2d		;body txt 2 ptr
+		bra.s	z80opcni3
+
+;	z80opc2ni
+;	display requester and get answer when unimplemented two byte opcode
+;	entry : regs as during emulation
+
+z80opc2ni:	bsr	z80tmem 		;save z80 regs
+		subq.w	#1,z80pc		;back up one step
+		move.b	-2(a4,a0.w),d0          ;opcode 1:st
+		rol.w	#8,d0
+		move.b	-1(a4,a0.w),d0          ;opcode 2:nd
+		move.l	#uoreqbtd,a0		;str ptr
+		bsr	bth16			;opcode to str
+		bra.s	z80opcni2
+
+;	z80opcni
+;	display requester and get answer when unimplemented opcode
+;	entry : regs as during emulation
+
+z80opcni:	bsr	z80tmem 		;save z80 regs
+		move.b	-1(a4,a0.w),d0          ;opcode
+		move.l	#uoreqbtd,a0		;str ptr
+		bsr	bth8			;opcode to str
+z80opcni2:	move.l	#uoreqbt,d6		;body txt ptr
+
+;	entry from other error requesters
+
+z80opcni3:	bclr.b	#1,glflgs		;flg no z80 open
+		tst.l	z80winptr
+		bne.s	z80opcni1		;if z80 win exists
+		bsr	openz80win
+		bset.b	#1,glflgs		;flg z80 open
+z80opcni1:	move.l	d6,a0			;body txt ptr
+		move.l	a0,-(a7)
+		move.l	intbase,a6
+		jsr	_LVOIntuiTextLength(a6)
+		add.l	#reqoffx*2+reqwadd,d0	;req width
+		move.l	d0,d2
+		move.l	(a7)+,a1                ;body txt ptr
+		move.l	#uoreqpt,a2
+		move.l	#uoreqnt,a3		;txt ptrs
+		move.l	z80winptr,a0
+		moveq.l #0,d0
+		move.l	d0,d1			;no IDCMP
+		move.l	#reqh,d3		;req height
+		jsr	_LVOAutoRequest(a6)
+		subq.w	#1,z80pc		;back up one step
+		bset.b	#0,glflgs		;flg z80 stop
+		bsr	disrs			;update display
+		bra	main12			;enter big loop
+
+;	error routines
+;	error 1 : generic resident library failure
+
+error1: 	move.l	#e1msg,a5
+		bra.s	errend
+
+;	error 2 : not possible to open window
+
+error2: 	move.l	#e2msg,a5
+		bra.s	errend
+
+;	error 3 : not possible to allocate z80 memory
+
+error3: 	move.l	#e3msg,a5
+		bra.s	errend
+
+;	error 4 : generic memory allocation failure
+
+error4: 	move.l	#e4msg,a5
+		bra.s	errend
+
+;	error 5 : not possible to open console device
+
+error5: 	move.l	#e5msg,a5
+		bra.s	errend
+
+;	error 6 : console DoIO error
+
+error6: 	move.l	#e6msg,a5
+		bra.s	errend
+
+		nop				;for short branch
+
+;	common error exit point
+
+errend: 	move.l	_DOSBase,a6
+		jsr	_LVOOutput(a6)
+		move.l	d0,d4			;output handle
+		move.l	generr,d3		;len
+		move.l	#generr+4,d2		;txt ptr
+		move.l	d4,d1			;handle
+		jsr	_LVOWrite(a6)           ;write
+		move.l	(a5)+,d3                ;len
+		move.l	a5,d2			;txt ptr
+		move.l	d4,d1			;handle
+		jsr	_LVOWrite(a6)           ;write
+		bra	exit
+
+;	xalloc
+;	allocate fast or chip memory (in that order) with remember
+;	entry : d0=Byte size
+;	exit :	d0=Pointer to memory block
+;		zflg=no alloc
+;	chg :	d0,d1
+;		a0,a1,a6
+
+xalloc: 	move.l	#MEMF_ANY,d1
+		move.l	#remkey,a0
+		move.l	intbase,a6
+		jsr	_LVOAllocRemember(a6)   ;get mem ptr
+		or.l	d0,d0
+		rts
+
+;	z80ntxt z80itxt print normal or inverted text in z80 window
+;	genntxt print normal text in any window
+;	entry : (z80?txt) d0.b=x coord, d1.b=y coord, a5=string ptr + <nul>
+;		(genntxt) same + a0.l=ptr rasport struct
+;	chg : d0,d1,a0,a1,a6
+
+z80itxt:
+z80ntxt:	move.l	z80rasptr,a0		;ptr rasport struct
+genntxt:	move.l	a5,itptr		;ascii txt ptr
+		and.l	#$000000ff,d0		;make long
+		and.l	#$000000ff,d1		;make long
+		move.l	intbase,a6
+		move.l	#intuitext,a1		;ptr intuitext struct
+		jmp	_LVOPrintIText(a6)
+
+;	bth32 bth16 bth8
+;	convert 32, 16 or 8 bit binary value to hexadecimal string
+;	no leading zero supression
+;	entry : d0=value, a0=pointer to string area
+;	exit :	a0=ptr <nul>
+;		(string area)=string + <nul>
+;	chg :	d0,d1,d2,a0
+
+bth8:		ror.l	#8,d0			;move 2 lsd
+		moveq	#1,d2			;2 digits
+		bra.s	bth2
+bth16:		swap	d0			;move 4 lsd
+		moveq	#3,d2			;4 digits
+		bra.s	bth2
+bth32:		moveq	#7,d2			;8 digits
+bth2:		rol.l	#4,d0			;31-28 -> 3-0
+		move.l	d0,d1
+		and.b	#$0f,d1 		;mask digits
+		add.b	#'0',d1                 ;make ascii if 0-9
+		cmp.b	#$39,d1
+		ble.s	bth1			;if 0-9
+		add.b	#'A'-'9'-1,d1           ;make ascii A-F
+bth1:		move.b	d1,(a0)+
+		dbra	d2,bth2 		;loop thru all digits
+		clr.b	(a0)                    ;end mark
+		rts
+
+;	htb
+;	convert hexadecimal string to binary value
+;	convert until non hex digit found
+;	entry : a0=pointer to string + <nul>
+;	exit :	d0=value, a0=pointer to 1:st byte not used
+;	chg  :	d0,d1,a0
+
+htb:		clr.l	d0
+htb4:		move.b	(a0),d1                 ;get digit
+		cmp.b	#'0',d1
+		blt.s	htb2			;if <0
+		cmp.b	#'9',d1
+		ble.s	htb3			;if 0-9
+		cmp.b	#'A',d1
+		blt.s	htb2			;if <A
+		cmp.b	#'F',d1
+		bgt.s	htb2			;if >F
+htb3:		lsl.l	#4,d0			;move for next
+		cmp.b	#'A',d1
+		blt.s	htb1			;if 0-9
+		sub.b	#'A'-'9'-1,d1           ;compensate for A-F
+htb1:		and.b	#$0f,d1 		;clr ascii part
+		or.b	d1,d0			;merge with result
+		addq.l	#1,a0			;nxt digit
+		bra.s	htb4			;loop
+
+;	exit
+
+htb2:		rts
+
+;	memtz80
+;	move z80 registers from memory to 68000 registers
+;	chg : d0,d1,d2,d3,d4,d5,a0,a1
+
+memtz80:	move.b	z80afp+1,d0		;f'
+		asl.w	#8,d0			;move to hi
+		move.b	z80afp,d0		;a'
+		swap	d0			;move to hi
+		move.w	z80hlp,d1
+		swap	d1			;move to hi
+		move.w	z80dep,d2
+		swap	d2			;move to hi
+		move.w	z80bcp,d3
+		swap	d3			;move to hi
+		move.w	z80ix,d4
+		move.w	z80iy,d5
+		move.b	z80af+1,d0		;f
+		asl.w	#8,d0			;move to hi
+		move.b	z80af,d0		;a
+		move.w	z80hl,d1
+		move.w	z80de,d2
+		move.w	z80bc,d3
+		move.w	z80pc,a0
+		move.w	z80sp,a1
+		rts
+
+;	z80tmem
+;	move z80 registers from 68000 registers to memory
+;	chg : d0,d1,d2,d3
+
+z80tmem:	ror.w	#8,d0			;make af
+		move.w	d0,z80af
+		swap	d0
+		ror.w	#8,d0			;make af'
+		move.w	d0,z80afp
+		move.w	d1,z80hl
+		swap	d1
+		move.w	d1,z80hlp
+		move.w	d2,z80de
+		swap	d2
+		move.w	d2,z80dep
+		move.w	d3,z80bc
+		swap	d3
+		move.w	d3,z80bcp
+		move.w	d4,z80ix
+		move.w	d5,z80iy
+		move.w	a0,z80pc
+		move.w	a1,z80sp
+		rts
+
+;	openz80win
+;	open z80 window, display fixed text, disable menu item
+;	chg : d0,d1,a0,a1,a5,a6
+
+openz80win:	tst.l	z80winptr
+		beq.s	ozw4			;if closed
+		rts
+ozw4:		move.l	#z80win,a0		;window ptr
+		move.l	intbase,a6
+		jsr	_LVOOpenWindow(a6)
+		or.l	d0,d0
+		beq	error2			;if no window
+		move.l	d0,z80winptr		;window ptr
+		move.l	d0,a0
+		move.l	wd_RPort(a0),z80rasptr  ;rast port ptr
+
+;	set up text in z80 window
+
+		move.l	#z80text,a5		;ptr start of text
+ozw2:		move.b	(a5)+,d0                ;x coord
+		beq.s	ozw1			;if no more txt
+		move.b	(a5)+,d1                ;y coord
+		bsr	z80ntxt
+ozw3:		move.b	(a5)+,d1
+		bne.s	ozw3			;move to end of txt
+		bra.s	ozw2			;loop thru all txt
+ozw1:		bsr	disrs
+		move.l	conwinptr,a0
+		move.l	#windowsmenu+z80pitem*$20,d0
+		jmp	_LVOOffMenu(a6)
+
+;	closez80win
+;	close z80 window, enable menu item
+;	chg : d0,d1,a0,a1,a6
+
+closez80win:	move.l	z80winptr,d0
+		bne.s	czw1			;if open
+		rts
+czw1:		move.l	d0,-(a7)
+		move.l	intbase,a6
+		clr.l	z80winptr		;mark as not open
+		move.l	conwinptr,a0
+		move.l	#windowsmenu+z80pitem*$20,d0
+		jsr	_LVOOnMenu(a6)
+		move.l	(a7)+,a0                ;z80winptr
+		jmp	_LVOCloseWindow(a6)
+
+;	disrs
+;	display run/stop gadget text
+;	chg : d0,d1,a0,a1,a5,a6
+
+disrs:		tst.l	z80winptr
+		bne.s	disrs2			;if z80 open
+		rts
+disrs2: 	move.b	#z80rsx+1,d0
+		move.b	#z80rsy+1,d1		;x,y coords
+		move.l	#stoptxt,a5
+		btst.b	#0,glflgs
+		beq.s	disrs1			;if z80 run
+		move.l	#runtxt,a5
+disrs1: 	bra	z80ntxt
+
+;	disz80
+;	display z80 register values in z80 window
+;	chg : d0,d1,a0,a1
+
+disz80: 	move.l	z80winptr,d0
+		bne.s	disz802 		;if z80 win open
+		rts
+disz802:	move.l	#z80regstart,a3 	;ptr regs
+		move.l	#z80regcrd,a4		;ptr coords
+		move.w	#0+(z80regend-z80regstart)/2-1,d3
+disz801:	move.b	(a4)+,d0                ;x coord
+		move.b	(a4),d1                 ;y coord
+		move.l	#spc4,a5
+		bsr	z80itxt 		;erase old reg
+		move.w	(a3)+,d0                ;reg value
+		move.l	#buffer,a5		;str buf
+		move.l	a5,a0
+		bsr	bth16
+		move.b	-(a4),d0                ;x coord
+		addq.l	#1,a4
+		move.b	(a4)+,d1                ;y coord
+		bsr	z80itxt 		;show new reg
+		dbra	d3,disz801		;loop thru regs
+		rts
+
+;	minpeh
+;	main input event handler
+;	if z80 running
+;	  only check for signal from IDCMP
+;	if (z80 NOT running) or (ccp running)
+;	  check for signal from IDCMP
+;	  wait for signal from IDCMP & console.device
+;	handles :
+;	IDCMP z80 window     : step gadget (only exit subroutine)
+;			       run/stop gadget
+;			       reset gadget
+;	IDCMP console window : project menue  - about
+;					      - version
+;					      - quit
+;			       window menue   - z80 processor
+;			       terminal menue - trap esc seq
+;					      - log to file
+;			       debug menue    - count
+;					      - save count
+;					      - trace
+;	console.device	     : character input (only exit subroutine)
+;	chg : d0,d1,d2,d3
+;	      a0,a1,a2,a3,a5,a6
+
+;	36->
+
+minpeh:
+minpeh1:	move.l	_SysBase,a6
+		move.l	z80winptr,d0
+		beq.s	minpeh2 		;if no z80 win
+		move.l	d0,a0
+		move.l	wd_UserPort(a0),a2      ;z80 IDCMP ptr
+		move.l	a2,a0			;z80 IDCMP ptr
+		jsr	_LVOGetMsg(a6)
+		or.l	d0,d0
+		bne	minpeh3 		;if msg
+minpeh2:	move.l	conwinptr,a0
+		move.l	wd_UserPort(a0),a3      ;con IDCMP ptr
+		move.l	a3,a0			;con IDCMP ptr
+		jsr	_LVOGetMsg(a6)
+		or.l	d0,d0
+		bne	minpeh15		;if msg
+		btst.b	#2,glflgs
+		bne.s	minpeh4 		;if conwait
+		btst.b	#0,glflgs
+		bne.s	minpeh4 		;if not z80 running
+		rts
+
+;	z80 is not running or ccp running
+;	wait for something to happen
+
+minpeh4:	moveq.l #0,d2			;no sigbit
+		btst.b	#2,glflgs
+		beq.s	minpeh17		;if no conwait
+		move.b	conmsgpsb,d1		;sigbit #
+		moveq.l #1,d2
+		asl.l	d1,d2			;sigbit mask
+minpeh17:	move.l	d2,d3
+		move.l	z80winptr,d0
+		beq.s	minpeh6 		;if no z80 win
+		move.b	MP_SIGBIT(a2),d1        ;z80 sigbit #
+		moveq.l #1,d0
+		asl.l	d1,d0			;z80 sigbit mask
+		or.l	d0,d2			;merge con dev & z80 win mask
+minpeh6:	move.b	MP_SIGBIT(a3),d1        ;con sigbit #
+		moveq.l #1,d0
+		asl.l	d1,d0			;con sigbit mask
+		or.l	d2,d0			;total mask
+		jsr	_LVOWait(a6)
+		cmp.l	d0,d3
+		bne	minpeh1 		;if not con.dev - chk msg
+		rts
+
+;	message from con window
+
+minpeh15:	move.l	d0,a1			;ptr msg
+		move.w	im_Code(a1),d2          ;menu #
+		move.l	im_Class(a1),d3         ;IDCMP class
+		jsr	_LVOReplyMsg(a6)
+		cmp.l	#MENUPICK,d3
+		bne	minpeh1 		;if not menu
+
+;	handle console menu
+
+minpeh12:	move.w	d2,d0
+		cmp.w	#MENUNULL,d0
+		beq	minpeh1 		;no valid menu
+		and.w	#$1f,d0
+		cmp.w	#projectmenu,d0
+		beq	minpeh7 		;if project menu
+		cmp.w	#windowsmenu,d0
+		beq	minpeh8 		;if windows menu
+		cmp.w	#terminalmenu,d0
+		beq	minpeh22		;if terminal menu
+		cmp.w	#debugmenu,d0
+		beq	minpeh27		;if debug menu
+		bra	minpeh1
+
+;	console menu project
+
+minpeh7:	move.w	d2,d0			;menu #
+		lsr.w	#5,d0
+		and.w	#$3f,d0
+		cmp.w	#quititem,d0
+		beq.s	minpeh9 		;if quit item
+		cmp.w	#aboutitem,d0
+		beq.s	minpeh18		;if about item
+		cmp.w	#veritem,d0
+		beq	minpeh33		;if version item
+		bra	minpeh1 		;no valid item
+
+;	console menu project item quit
+
+minpeh9:	bra	exit
+
+;	console menu project item about
+;	open window
+
+minpeh18:	move.l	intbase,a6
+		move.l	conwinptr,a0
+		move.l	#projectmenu+aboutitem*$20,d0
+		jsr	_LVOOffMenu(a6)
+		move.l	#aboutwin,a0		;window ptr
+		jsr	_LVOOpenWindow(a6)
+		or.l	d0,d0
+		beq	error2			;if no window
+		move.l	d0,a3			;win ptr
+		move.l	wd_RPort(a3),a2         ;rast port ptr
+
+;	display text
+
+		move.l	#abouttext,a5		;ptr 1:st line
+		move.b	#chrh+4,d1		;1:st y coord
+minpeh20:	move.b	#chrw,d0		;1:st x coord
+		move.b	d1,d2
+		move.l	a2,a0			;rast port ptr
+		bsr	genntxt
+minpeh19:	tst.b	(a5)+
+		bne.s	minpeh19		;move to end of line
+		move.b	d2,d1			;y coord
+		add.b	#chrh+2,d1		;new y coord
+		tst.b	(a5)
+		bne.s	minpeh20		;if more lines
+		move.l	#projectmenu+aboutitem*$20,d2
+
+;	wait for close gadget
+;	entry from version item
+
+minpeh35:	move.l	wd_UserPort(a3),a2      ;IDCMP ptr
+		move.b	MP_SIGBIT(a2),d1        ;sigbit #
+		moveq.l #1,d0
+		asl.l	d1,d0			;sigbit mask
+		move.l	_SysBase,a6
+		jsr	_LVOWait(a6)
+
+;	close window
+
+		move.l	a3,a0			;win ptr
+		move.l	intbase,a6
+		jsr	_LVOCloseWindow(a6)
+		move.l	conwinptr,a0
+		move.l	d2,d0			;menu#
+		jsr	_LVOOnMenu(a6)
+		bra	minpeh1
+
+;	console menu project item version
+;	open window
+
+minpeh33:	move.l	intbase,a6
+		move.l	conwinptr,a0
+		move.l	#projectmenu+veritem*$20,d0
+		jsr	_LVOOffMenu(a6)
+		move.l	#verwin,a0		;window ptr
+		jsr	_LVOOpenWindow(a6)
+		or.l	d0,d0
+		beq	error2			;if no window
+		move.l	d0,a3			;win ptr
+		move.l	wd_RPort(a3),a2         ;rast port ptr
+
+;	display text
+
+		move.l	a3,-(a7)
+		clr.l	d0
+		move.l	d0,a1			;null ptr
+		move.l	_SysBase,a6
+		jsr	_LVOFindTask(a6)
+		move.l	intbase,a6
+		move.l	#taskaddr,a0
+		bsr	bth32			;task addr in hex
+		move.l	#verptrs,a3		;ptr 1:st ptr
+		move.b	#chrh+4,d1		;1:st y coord
+minpeh34:	move.b	#chrw,d0		;1:st x coord
+		move.l	(a3)+,a5                ;a ver txt ptr
+		move.b	d1,d2
+		move.l	a2,a0			;rast port ptr
+		bsr	genntxt
+		move.b	d2,d1			;y coord
+		add.b	#chrh+2,d1		;new y coord
+		tst.l	(a3)
+		bne.s	minpeh34		;if more ptrs
+
+;	close and exit
+
+		move.l	#projectmenu+veritem*$20,d2 ;menu #
+		move.l	(a7)+,a3                ;win ptr
+		bra	minpeh35
+
+;	console menu terminal
+
+minpeh22:	move.w	d2,d0			;menu #
+		lsr.w	#5,d0
+		and.w	#$3f,d0
+		cmp.w	#escseqitem,d0
+		beq.s	minpeh23		;if esc seq item
+		cmp.w	#logitem,d0
+		beq.s	minpeh25		;if log to file item
+		bra	minpeh1 		;no valid item
+
+;	console menu terminal item trap esc seq
+
+minpeh23:	move.l	cm31me,d0
+		move.w	cm31f,d1
+		and.l	#~(1<<escseqitem),d0    ;clr MutualExclude
+		and.w	#~CHECKED,d1		;clr CHECKED
+		bclr.b	#4,glflgs		;flg no trap
+		bne.s	minpeh24		;if old was trap
+		or.l	#1<<escseqitem,d0	;set MutualExclude
+		or.w	#CHECKED,d1		;set CHECKED
+		bset.b	#4,glflgs		;flg trap
+minpeh24:	move.w	d0,cm31me		;update MutualExclude
+		move.w	d1,cm31f		;update menu flags
+		bra	minpeh11
+
+;	console menu terminal item log to file
+
+minpeh25:	move.l	cm32me,d0
+		move.w	cm32f,d1
+		and.l	#~(1<<logitem),d0       ;clr MutualExclude
+		and.w	#~CHECKED,d1		;clr CHECKED
+		jsr	closelog
+		bne.s	minpeh26		;if close success
+		jsr	openlog
+		beq.s	minpeh26		;if open failure
+		or.l	#1<<logitem,d0		;set MutualExclude
+		or.w	#CHECKED,d1		;set CHECKED
+minpeh26:	move.w	d0,cm32me		;update MutualExclude
+		move.w	d1,cm32f		;update menu flags
+		bra	minpeh11
+
+;	console menu debug
+
+minpeh27:	move.w	d2,d0			;menu #
+		lsr.w	#5,d0
+		and.w	#$3f,d0
+		cmp.w	#countitem,d0
+		beq.s	minpeh28		;if debug count item
+		cmp.w	#savecitem,d0
+		beq.s	minpeh29		;if debug save count item
+		cmp.w	#traceitem,d0
+		beq.s	minpeh31		;if debug trace item
+		bra	minpeh1 		;no valid item
+
+;	console menu debug count
+
+minpeh28:	move.l	cm41me,d0
+		move.w	cm41f,d1
+		and.l	#~(1<<countitem),d0     ;clr MutualExclude
+		and.w	#~CHECKED,d1		;clr CHECKED
+		jsr	stopcnt
+		bne.s	minpeh30		;if stop success
+		jsr	startcnt
+		bne.s	minpeh30		;if start failure
+		or.l	#1<<countitem,d0	;set MutualExclude
+		or.w	#CHECKED,d1		;set CHECKED
+minpeh30:	move.w	d0,cm41me		;update MutualExclude
+		move.w	d1,cm41f		;update menu flags
+		bra.s	minpeh11
+
+;	console menu debug save count
+
+minpeh29:	jsr	savecnt
+		bra.s	minpeh11
+
+;	console menu debug trace
+
+minpeh31:	move.l	cm43me,d0
+		move.w	cm43f,d1
+		and.l	#~(1<<traceitem),d0     ;clr MutualExclude
+		and.w	#~CHECKED,d1		;clr CHECKED
+		jsr	stoptrc
+		bne.s	minpeh32		;if stop success
+		jsr	starttrc
+		beq.s	minpeh32		;if start failure
+		or.l	#1<<traceitem,d0	;set MutualExclude
+		or.w	#CHECKED,d1		;set CHECKED
+minpeh32:	move.w	d0,cm43me		;update MutualExclude
+		move.w	d1,cm43f		;update menu flags
+		bra.s	minpeh11
+
+;	console menu windows
+
+minpeh8:	move.w	d2,d0			;menu #
+		lsr.w	#5,d0
+		and.w	#$3f,d0
+		cmp.w	#z80pitem,d0
+		beq.s	minpeh10		;if z80 proc item
+		bra	minpeh1 		;no valid item
+
+;	console menu windows item z80 processor
+
+minpeh10:	bsr	openz80win
+		btst.b	#0,glflgs
+		beq.s	minpeh11		;if z80 run
+		bsr	disz80
+		bra.s	minpeh11
+		nop				;for bxx.s
+
+;	common console menu exit
+;	entry : d2.w=menu #
+
+minpeh11:	move.l	#conmenu,a0		;ptr MenuStrip
+		moveq.l #0,d0
+		move.w	d2,d0			;menu #
+		move.l	intbase,a6
+		jsr	_LVOItemAddress(a6)
+		move.w	mi_NextSelect(a0),d2    ;next menu #
+		bra	minpeh12		;chk nxt
+
+;	message from z80 window
+
+minpeh3:	move.l	d0,a1			;ptr msg
+		move.l	im_Class(a1),d3         ;IDCMP class
+		move.l	im_IAddress(a1),a3      ;gadget ptr
+		jsr	_LVOReplyMsg(a6)
+		cmp.l	#CLOSEWINDOW,d3
+		beq	minpeh13		;if close window
+		cmp.l	#GADGETUP,d3
+		bne	minpeh1 		;if not gadget
+
+;	handle z80 gadgets
+
+		move.w	gg_GadgetID(a3),d0
+		cmp.w	#stepid,d0
+		bne.s	minpeh5 		;if not step gadget
+		rts
+minpeh5:	cmp.w	#resid,d0
+		beq.s	minpeh21		;if reset gadget
+		cmp.w	#rsid,d0
+		bne	minpeh1 		;if not run/stop gadget
+
+;	z80 gadget run/stop, toggle flg
+
+		bset.b	#0,glflgs
+		beq.s	minpeh16		;if 0
+		bclr.b	#0,glflgs
+minpeh16:	bsr	disrs			;update display
+		rts
+
+;	reset gadget
+
+minpeh21:	bra	osexit
+
+;	z80 closewindow
+
+minpeh13:	bsr	closez80win
+		bra	minpeh1
+
+;	data area
+;	initialized data area
+;	strings
+;	error messages
+
+generr: 	dc.l	generrend-generr-4
+		dc.b	'CPM : '
+generrend:
+e1msg:		dc.l	e1msgend-e1msg-4
+		dc.b	'Not possible to open resident library'
+		dc.b	lf
+e1msgend:
+e2msg:		dc.l	e2msgend-e2msg-4
+		dc.b	'Not possible to open window'
+		dc.b	lf
+e2msgend:
+e3msg:		dc.l	e3msgend-e3msg-4
+		dc.b	'Not possible to allocate z80 memory'
+		dc.b	lf
+e3msgend:
+e4msg:		dc.l	e4msgend-e4msg-4
+		dc.b	'Memory allocation failure'
+		dc.b	lf
+e4msgend:
+e5msg:		dc.l	e5msgend-e5msg-4
+		dc.b	'Not possible to open console device'
+		dc.b	lf
+e5msgend:
+e6msg:		dc.l	e6msgend-e6msg-4
+		dc.b	'Error while writing to console'
+		dc.b	lf
+e6msgend:
+
+;	various
+
+doslib: 	dc.b	'dos.library',0
+intlib: 	dc.b	'intuition.library',0
+runtxt: 	dc.b	'Run ',0
+spc4:		dc.b	'    ',0
+stoptxt:	dc.b	'Stop',0
+taskver:	dc.b	'Task address : '
+taskaddr:	dc.b	'00000000',0
+
+;	z80 window data area
+;	title
+
+z80winttl:	dc.b	'CP/M Z80 Processor',0
+
+;	fixed text
+;	x, y coords
+;	text at this position
+;	end with x coord = 0
+
+z80text:	dc.b	2*chrw,2*chrh
+		dc.b	'A F  H L  D E  B C  S P  P C',0
+		dc.b	2*chrw,4*chrh+4
+		dc.b	'A F'' H L'' D E'' B C'' I X  I Y',0
+		dc.b	z80stpx+1,z80stpy+1
+		dc.b	'Step',0
+		dc.b	z80resx+1,z80resy+1
+		dc.b	'Reset',0
+		dc.b	0	;end
+
+;	changed text
+;	coordinates for register in z80 window
+;	x, y
+
+z80regcrd:	dc.b	2*chrw,3*chrh+2 	;af
+		dc.b	(2+5)*chrw,3*chrh+2     ;hl
+		dc.b	(2+2*5)*chrw,3*chrh+2   ;de
+		dc.b	(2+3*5)*chrw,3*chrh+2   ;bc
+		dc.b	(2+4*5)*chrw,3*chrh+2   ;sp
+		dc.b	(2+5*5)*chrw,3*chrh+2   ;pc
+		dc.b	2*chrw,5*chrh+4+2	;af'
+		dc.b	(2+5)*chrw,5*chrh+4+2   ;hl'
+		dc.b	(2+2*5)*chrw,5*chrh+4+2 ;de'
+		dc.b	(2+3*5)*chrw,5*chrh+4+2 ;bc'
+		dc.b	(2+4*5)*chrw,5*chrh+4+2 ;ix
+		dc.b	(2+5*5)*chrw,5*chrh+4+2 ;iy
+
+;	z80 NewWindow struct
+
+z80win: 	dc.w	winx,winy		;top x,y
+		dc.w	z80winw,z80winh 	;width, height
+		dc.b	windp,winbp		;detail, block pen
+		dc.l	GADGETUP+CLOSEWINDOW	;idcmp flags
+		dc.l	WINDOWDRAG+WINDOWDEPTH+WINDOWCLOSE ;window flags
+		dc.l	z80step 		;ptr 1st gadget
+		dc.l	0			;ptr checkmark
+		dc.l	z80winttl		;ptr title
+		dc.l	0			;ptr screen
+		dc.l	0			;ptr bit map
+		dc.w	0,0			;min width height
+		dc.w	0,0			;max width height
+		dc.w	WBENCHSCREEN		;screen type
+
+;	z80 window gadget structs
+;	step
+
+z80step:	dc.l	z80rs			;ptr nxt gadget
+		dc.w	z80stpx,z80stpy 	;top x,y
+		dc.w	z80stpw,z80stph 	;width, height
+		dc.w	GADGHCOMP		;flags
+		dc.w	RELVERIFY		;activation
+		dc.w	BOOLGADGET		;gadget type
+		dc.l	0			;ptr gadget render
+		dc.l	0			;ptr select render
+		dc.l	0			;ptr gadget txt
+		dc.l	0			;mutual exclude
+		dc.l	0			;ptr spec info
+		dc.w	stepid			;id#
+		dc.l	0			;ptr user data
+
+;	run/stop
+
+z80rs:		dc.l	z80res			;ptr nxt gadget
+		dc.w	z80rsx,z80rsy		;top x,y
+		dc.w	z80rsw,z80rsh		;width, height
+		dc.w	GADGHCOMP		;flags
+		dc.w	RELVERIFY		;activation
+		dc.w	BOOLGADGET		;gadget type
+		dc.l	0			;ptr gadget render
+		dc.l	0			;ptr select render
+		dc.l	0			;ptr gadget txt
+		dc.l	0			;mutual exclude
+		dc.l	0			;ptr spec info
+		dc.w	rsid			;id#
+		dc.l	0			;ptr user data
+
+;	reset
+
+z80res: 	dc.l	0			;ptr nxt gadget
+		dc.w	z80resx,z80resy 	;top x,y
+		dc.w	z80resw,z80resh 	;width, height
+		dc.w	GADGHCOMP		;flags
+		dc.w	RELVERIFY		;activation
+		dc.w	BOOLGADGET		;gadget type
+		dc.l	0			;ptr gadget render
+		dc.l	0			;ptr select render
+		dc.l	0			;ptr gadget txt
+		dc.l	0			;mutual exclude
+		dc.l	0			;ptr spec info
+		dc.w	resid			;id#
+		dc.l	0			;ptr user data
+
+;	about window data area
+;	title
+
+aboutwinttl:	dc.b	'About',0
+
+;	about NewWindow struct
+
+aboutwin:	dc.w	winx,winy		;top x,y
+		dc.w	aboutwinw,aboutwinh	;width, height
+		dc.b	windp,winbp		;detail, block pen
+		dc.l	GADGETUP		;idcmp flags
+		dc.l	0			;window flags
+		dc.l	aboutclose		;ptr 1st gadget
+		dc.l	0			;ptr checkmark
+		dc.l	aboutwinttl		;ptr title
+		dc.l	0			;ptr screen
+		dc.l	0			;ptr bit map
+		dc.w	0,0			;min width height
+		dc.w	0,0			;max width height
+		dc.w	WBENCHSCREEN		;screen type
+
+;	about window gadget structs
+;	close (gadget covers all of window)
+
+aboutclose:	dc.l	0			;ptr nxt gadget
+		dc.w	0,0			;top x,y
+		dc.w	aboutwinw,aboutwinh	;width, height
+		dc.w	GADGHCOMP		;flags
+		dc.w	RELVERIFY		;activation
+		dc.w	BOOLGADGET		;gadget type
+		dc.l	0			;ptr gadget render
+		dc.l	0			;ptr select render
+		dc.l	0			;ptr gadget txt
+		dc.l	0			;mutual exclude
+		dc.l	0			;ptr spec info
+		dc.w	0			;id#
+		dc.l	0			;ptr user data
+
+;	version window data area
+;	title
+
+verwinttl:	dc.b	'Version',0
+
+;	version NewWindow struct
+
+verwin: 	dc.w	winx,winy		;top x,y
+		dc.w	verwinw,verwinh 	;width, height
+		dc.b	windp,winbp		;detail, block pen
+		dc.l	GADGETUP		;idcmp flags
+		dc.l	0			;window flags
+		dc.l	verclose		;ptr 1st gadget
+		dc.l	0			;ptr checkmark
+		dc.l	verwinttl		;ptr title
+		dc.l	0			;ptr screen
+		dc.l	0			;ptr bit map
+		dc.w	0,0			;min width height
+		dc.w	0,0			;max width height
+		dc.w	WBENCHSCREEN		;screen type
+
+;	version window gadget structs
+;	close (gadget covers all of window)
+
+verclose:	dc.l	0			;ptr nxt gadget
+		dc.w	0,0			;top x,y
+		dc.w	verwinw,verwinh 	;width, height
+		dc.w	GADGHCOMP		;flags
+		dc.w	RELVERIFY		;activation
+		dc.w	BOOLGADGET		;gadget type
+		dc.l	0			;ptr gadget render
+		dc.l	0			;ptr select render
+		dc.l	0			;ptr gadget txt
+		dc.l	0			;mutual exclude
+		dc.l	0			;ptr spec info
+		dc.w	0			;id#
+		dc.l	0			;ptr user data
+
+;	generic intuitext
+
+		ds.w	0			;align
+intuitext:	dc.b	winbp,windp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	0			;word align fill
+		dc.w	0,0			;top x,y
+		dc.l	0			;ptr font
+itptr:		dc.l	0			;ptr text, to be set
+		dc.l	0			;ptr next intui text
+
+;	MenuStrip for console window
+;	first menu - Project
+
+conmenu:	ds.w	0			;align
+cm1:		dc.l	cm2			;ptr next menu
+		dc.w	0			;left edge
+		dc.w	0			;top edge
+		dc.w	cm1w			;width
+		dc.w	0			;height
+		dc.w	MENUENABLED		;flags
+		dc.l	cm1n			;ptr name
+		dc.l	cm11			;ptr 1:st item
+		dcb.w	4,0			;RJs Jazz&Beat
+cm1n:		dc.b	'Project ',0            ;menu name
+cm1ne:
+
+cm1w		equ	chrw*(cm1ne-cm1n-1)+2   ;width
+
+;	first menu first item - Project About
+
+cm11:		dc.l	cm12			;ptr next item
+		dc.w	0			;rel left edge
+		dc.w	0			;top edge
+		dc.w	cm1w			;width
+		dc.w	chrh+2			;height
+		dc.w	ITEMTEXT+ITEMENABLED+HIGHCOMP ;flags
+		dc.l	0			;mutual exclude
+		dc.l	cm11t			;ptr intui text
+		dc.l	0			;ptr select fill
+		dc.b	0			;command
+		dc.b	0			;word align fill
+		dc.l	0			;ptr sub item
+		dc.w	0			;next select
+cm11t:		dc.b	windp,winbp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	0			;word align fill
+		dc.w	0,0			;top x,y
+		dc.l	0			;ptr font
+		dc.l	cm11n			;ptr text
+		dc.l	0			;ptr next intui text
+cm11n:		dc.b	'About',0               ;item name
+cm11ne:
+
+;	first menu second item - Project Version
+
+cm12:		dc.l	cm13			;ptr next item
+		dc.w	0			;rel left edge
+		dc.w	chrh+2			;top edge
+		dc.w	cm1w			;width
+		dc.w	chrh+2			;height
+		dc.w	ITEMTEXT+ITEMENABLED+HIGHCOMP ;flags
+		dc.l	0			;mutual exclude
+		dc.l	cm12t			;ptr intui text
+		dc.l	0			;ptr select fill
+		dc.b	0			;command
+		dc.b	0			;word align fill
+		dc.l	0			;ptr sub item
+		dc.w	0			;next select
+cm12t:		dc.b	windp,winbp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	0			;word align fill
+		dc.w	0,0			;top x,y
+		dc.l	0			;ptr font
+		dc.l	cm12n			;ptr text
+		dc.l	0			;ptr next intui text
+cm12n:		dc.b	'Version',0             ;item name
+cm12ne:
+
+;	first menu third item - Project Quit
+
+cm13:		dc.l	0			;ptr next item
+		dc.w	0			;rel left edge
+		dc.w	2*(chrh+2)              ;top edge
+		dc.w	cm1w			;width
+		dc.w	chrh+2			;height
+		dc.w	ITEMTEXT+ITEMENABLED+HIGHCOMP ;flags
+		dc.l	0			;mutual exclude
+		dc.l	cm13t			;ptr intui text
+		dc.l	0			;ptr select fill
+		dc.b	0			;command
+		dc.b	0			;word align fill
+		dc.l	0			;ptr sub item
+		dc.w	0			;next select
+cm13t:		dc.b	windp,winbp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	0			;word align fill
+		dc.w	0,0			;top x,y
+		dc.l	0			;ptr font
+		dc.l	cm13n			;ptr text
+		dc.l	0			;ptr next intui text
+cm13n:		dc.b	'Quit',0                ;item name
+cm13ne:
+
+;	second menu - Windows
+
+cm2:		dc.l	cm3			;ptr next menu
+		dc.w	cm1w+chrw		;left edge
+		dc.w	0			;top edge
+		dc.w	cm2w			;width
+		dc.w	0			;height
+		dc.w	MENUENABLED		;flags
+		dc.l	cm2n			;ptr name
+		dc.l	cm21			;ptr 1:st item
+		dcb.w	4,0			;RJs Jazz&Beat
+cm2n:		dc.b	'Windows ',0            ;menu name
+cm2ne:
+
+cm2w		equ	chrw*(cm2ne-cm2n-1)+2   ;width
+
+;	second menu first item - Windows Z80 Processor
+
+cm21:		dc.l	0			;ptr next item
+		dc.w	0			;rel left edge
+		dc.w	0			;top edge
+		dc.w	chrw*(cm21ne-cm21n)+2   ;width
+		dc.w	chrh+2			;height
+		dc.w	ITEMTEXT+ITEMENABLED+HIGHCOMP ;flags
+		dc.l	0			;mutual exclude
+		dc.l	cm21t			;ptr intui text
+		dc.l	0			;ptr select fill
+		dc.b	0			;command
+		dc.b	0			;word align fill
+		dc.l	0			;ptr sub item
+		dc.w	0			;next select
+cm21t:		dc.b	windp,winbp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	0			;word align fill
+		dc.w	0,0			;top x,y
+		dc.l	0			;ptr font
+		dc.l	cm21n			;ptr text
+		dc.l	0			;ptr next intui text
+cm21n:		dc.b	'Z80 processor',0       ;item name
+cm21ne:
+
+;	third menu - Terminal
+
+cm3:		dc.l	cm4			;ptr next menu
+		dc.w	cm1w+cm2w+2*chrw	;left edge
+		dc.w	0			;top edge
+		dc.w	cm3w			;width
+		dc.w	0			;height
+		dc.w	MENUENABLED		;flags
+		dc.l	cm3n			;ptr name
+		dc.l	cm31			;ptr 1:st item
+		dcb.w	4,0			;RJs Jazz&Beat
+cm3n:		dc.b	'Terminal ',0            ;menu name
+cm3ne:
+
+cm3w		equ	chrw*(cm3ne-cm3n-1)+2   ;width
+
+;	third menu first item - Terminal Trap Esc Seq
+
+cm31:		dc.l	cm32			;ptr next item
+		dc.w	0			;rel left edge
+		dc.w	0			;top edge
+		dc.w	chrw*(cm31ne-cm31n)+2   ;width
+		dc.w	chrh+2			;height
+cm31f:		dc.w	CHECKIT+ITEMTEXT+ITEMENABLED+HIGHCOMP ;flags
+cm31me: 	dc.l	0			;mutual exclude
+		dc.l	cm31t			;ptr intui text
+		dc.l	0			;ptr select fill
+		dc.b	0			;command
+		dc.b	0			;word align fill
+		dc.l	0			;ptr sub item
+		dc.w	0			;next select
+cm31t:		dc.b	windp,winbp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	0			;word align fill
+		dc.w	0,0			;top x,y
+		dc.l	0			;ptr font
+		dc.l	cm31n			;ptr text
+		dc.l	0			;ptr next intui text
+cm31n:		dc.b	'  Trap Esc Seq',0      ;item name
+cm31ne:
+
+;	third menu second item - Terminal Log to file
+
+cm32:		dc.l	0			;ptr next item
+		dc.w	0			;rel left edge
+		dc.w	chrh+2			;top edge
+		dc.w	chrw*(cm31ne-cm31n)+2   ;width
+		dc.w	chrh+2			;height
+cm32f:		dc.w	CHECKIT+ITEMTEXT+ITEMENABLED+HIGHCOMP ;flags
+cm32me: 	dc.l	0			;mutual exclude
+		dc.l	cm32t			;ptr intui text
+		dc.l	0			;ptr select fill
+		dc.b	0			;command
+		dc.b	0			;word align fill
+		dc.l	0			;ptr sub item
+		dc.w	0			;next select
+cm32t:		dc.b	windp,winbp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	0			;word align fill
+		dc.w	0,0			;top x,y
+		dc.l	0			;ptr font
+		dc.l	cm32n			;ptr text
+		dc.l	0			;ptr next intui text
+cm32n:		dc.b	'  Log to file',0      ;item name
+cm32ne:
+
+;	fourth menu - Debug
+
+cm4:		dc.l	0			;ptr next menu
+		dc.w	cm1w+cm2w+cm3w+2*chrw	;left edge
+		dc.w	0			;top edge
+		dc.w	cm4w			;width
+		dc.w	0			;height
+		dc.w	MENUENABLED		;flags
+		dc.l	cm4n			;ptr name
+		dc.l	cm41			;ptr 1:st item
+		dcb.w	4,0			;RJs Jazz&Beat
+cm4n:		dc.b	'Debug ',0            ;menu name
+cm4ne:
+
+cm4w		equ	chrw*(cm4ne-cm4n-1)+2   ;width
+
+;	fourth menu first item - Count
+
+cm41:		dc.l	cm42			;ptr next item
+		dc.w	0			;rel left edge
+		dc.w	0			;top edge
+		dc.w	chrw*(cm42ne-cm42n)+2   ;width
+		dc.w	chrh+2			;height
+cm41f:		dc.w	CHECKIT+ITEMTEXT+ITEMENABLED+HIGHCOMP ;flags
+cm41me: 	dc.l	0			;mutual exclude
+		dc.l	cm41t			;ptr intui text
+		dc.l	0			;ptr select fill
+		dc.b	0			;command
+		dc.b	0			;word align fill
+		dc.l	0			;ptr sub item
+		dc.w	0			;next select
+cm41t:		dc.b	windp,winbp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	0			;word align fill
+		dc.w	0,0			;top x,y
+		dc.l	0			;ptr font
+		dc.l	cm41n			;ptr text
+		dc.l	0			;ptr next intui text
+cm41n:		dc.b	'  Count',0             ;item name
+cm41ne:
+
+;	fourth menu second item - Save Count
+
+cm42:		dc.l	cm43			;ptr next item
+		dc.w	0			;rel left edge
+		dc.w	chrh+2			;top edge
+		dc.w	chrw*(cm42ne-cm42n)+2   ;width
+		dc.w	chrh+2			;height
+		dc.w	ITEMTEXT+ITEMENABLED+HIGHCOMP ;flags
+		dc.l	0			;mutual exclude
+		dc.l	cm42t			;ptr intui text
+		dc.l	0			;ptr select fill
+		dc.b	0			;command
+		dc.b	0			;word align fill
+		dc.l	0			;ptr sub item
+		dc.w	0			;next select
+cm42t:		dc.b	windp,winbp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	0			;word align fill
+		dc.w	0,0			;top x,y
+		dc.l	0			;ptr font
+		dc.l	cm42n			;ptr text
+		dc.l	0			;ptr next intui text
+cm42n:		dc.b	'  Save Count',0        ;item name
+cm42ne:
+
+;	fourth menu third item - Trace
+
+cm43:		dc.l	0			;ptr next item
+		dc.w	0			;rel left edge
+		dc.w	2*(chrh+2)              ;top edge
+		dc.w	chrw*(cm42ne-cm42n)+2   ;width
+		dc.w	chrh+2			;height
+cm43f:		dc.w	CHECKIT+ITEMTEXT+ITEMENABLED+HIGHCOMP ;flags
+cm43me: 	dc.l	0			;mutual exclude
+		dc.l	cm43t			;ptr intui text
+		dc.l	0			;ptr select fill
+		dc.b	0			;command
+		dc.b	0			;word align fill
+		dc.l	0			;ptr sub item
+		dc.w	0			;next select
+cm43t:		dc.b	windp,winbp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	0			;word align fill
+		dc.w	0,0			;top x,y
+		dc.l	0			;ptr font
+		dc.l	cm43n			;ptr text
+		dc.l	0			;ptr next intui text
+cm43n:		dc.b	'  Trace',0             ;item name
+cm43ne:
+
+;	intuitexts for requesters
+;	body text, opcode
+
+		ds.w	0			;align
+uoreqbt:	dc.b	windp,winbp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	0			;word align fill
+		dc.w	reqoffx,reqoffy 	;top x,y
+		dc.l	0			;ptr font
+		dc.l	1$			;ptr text
+		dc.l	0			;ptr next intui text
+1$:		dc.b	'Unimplemented opcode $'
+uoreqbtd:	dc.b	'    ',0
+
+;	body text 1, cpm function
+
+		ds.w	0			;align
+cereqbt1:	dc.b	windp,winbp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	0			;word align fill
+		dc.w	reqoffx,reqoffy 	;top x,y
+		dc.l	0			;ptr font
+		dc.l	1$			;ptr text
+		dc.l	cereqbt2		;ptr next intui text
+1$:		dc.b	'CPM function $'
+cereqbtd2:	dc.b	'  , error $'
+cereqbtd1:	dc.b	'  ',0
+
+;	body text 2, cpm function
+
+		ds.w	0			;align
+cereqbt2:	dc.b	windp,winbp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	0			;word align fill
+		dc.w	reqoffx,reqoffy+chrh+2	;top x,y
+		dc.l	0			;ptr font
+cereqbt2d:	dc.l	0			;ptr text, to be set
+		dc.l	0			;ptr next intui text
+
+;	positive text, opcode & cpm function
+
+		ds.w	0			;align
+uoreqpt:	dc.b	windp,winbp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	0			;word align fill
+		dc.w	reqoffx,reqoffy 	;top x,y
+		dc.l	0			;ptr font
+		dc.l	1$			;ptr text
+		dc.l	0			;ptr next intui text
+1$:		dc.b	'Stop',0
+
+;	negative text, opcode & cpm function
+
+		ds.w	0			;align
+uoreqnt:	dc.b	windp,winbp		;front, back pen
+		dc.b	RP_JAM2 		;draw mode
+		dc.b	0			;word align fill
+		dc.w	reqoffx,reqoffy 	;top x,y
+		dc.l	0			;ptr font
+		dc.l	1$			;ptr text
+		dc.l	0			;ptr next intui text
+1$:		dc.b	'Halt',0
+
+;	library pointers
+
+libstart:	ds.w	0			;align
+intbase:	dc.l	0			;intuition base
+_DOSBase	dc.l	0			;AmigaDOS base
+		dc.l	$ffffffff		;last
+
+;	window pointers
+
+winstart:	ds.w	0			;align
+conwinptr:	dc.l	0			;ptr console window struct
+z80winptr:	dc.l	0			;ptr z80 window struct
+		dc.l	$ffffffff		;last
+
+;	table over version pointers, end with ptr=0
+
+verptrs:	dc.l	czver
+		dc.l	cever
+		dc.l	zekver
+		dc.l	zekcbver
+		dc.l	zekddver
+		dc.l	zekedver
+		dc.l	taskver
+		dc.l	0			;end
+
+;	various
+
+debug:		dc.b	0			;non zero durin debug
+glflgs: 	dc.b	0			;global flags
+						;0 : z80 stopped
+						;1 : z80 opened by z80opcni
+						;2 : console waiting
+						;3 : new chr in conbuf
+						;4 : req on undef esc seq
+						;5 : debug count in progress
+						;6 : debug trace in progress
+remkey: 	dc.l	0			;ptr for alloc/free remember
+
+;	uninitialized data area
+;	z80 registers
+;	do not change induvidial order
+
+z80regstart:	ds.w	0			;align
+z80af:		ds.w	1
+z80hl:		ds.w	1
+z80de:		ds.w	1
+z80bc:		ds.w	1
+z80sp:		ds.w	1
+z80pc:		ds.w	1
+z80afp: 	ds.w	1
+z80hlp: 	ds.w	1
+z80dep: 	ds.w	1
+z80bcp: 	ds.w	1
+z80ix:		ds.w	1
+z80iy:		ds.w	1
+z80regend:				;last register label
+
+;	various
+
+buffer: 	ds.b	buflen		;scratch use
+ireg:		ds.b	1		;ireg in z80
+spsave: 	ds.l	1		;save initial sp
+z80pgmptr:	ds.l	1		;ptr z80 program area
+z80rasptr:	ds.l	1		;ptr z80 window rasport
+_SysBase:	ds.l	1		;exec library ptr
+
+		end
+

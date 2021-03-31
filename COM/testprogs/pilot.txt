@@ -1,0 +1,7 @@
+PILOT requires the following terminal controls:
+
+<esc>(  Highlight on
+<esc>)  Highlight off
+<esc>=  Cursor position
+ctrl-z  Clear screen
+

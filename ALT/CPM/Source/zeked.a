@@ -1,0 +1,628 @@
+;	z80 emulator subkernel
+;	$ed two byte opcode instructions
+
+zekedver:	dc.b	'Zeked Ver: 00026   Date: 25-Sep-88 21:17:49 ',0
+
+;	This source code is released into the public domain for
+;	non-profit use only.
+;	Copyright (C) 1988, Ulf Nordquist. All Rights Reserved !
+;	Ulf Nordquist
+;	Brunnehagen 36
+;	417 47 Gothenburg
+;	Sweden
+
+;	self modifying code is used
+
+;	history
+;	871105 : moved from zek
+;		 $73 emulated
+;	871113 : $01 emulated (cpm transfer)
+;	880221 : detection of unimplemented $ed nn opcodes
+;		 ldir, ldi, lddr, ldd
+;		 ld de,(nn), ld bc,(nn), ld sp,(nn)
+;		 sbc hl,de, sbc hl,bc
+;	880223 : ld (nn),de, ld (nn),bc
+;		 ld a,i
+;	880430 : ver 00001
+;	880710 : modify code in main emu loop when debug count
+;		 edinit, edstart, edstop
+;	880821 : include zekmc.i
+;	880910 : sbc hl,sp, adc hl,bc, adc hl,de, adc hl,sp
+;	880911 : bug1 chk if really count, can be set by trace
+;	880920 : bug2(possibly) ld sp,(nn) - no ext.l
+;		 cpir, cpdr, cpi, cpd
+;	880923 : bug3 in ld (nn),sp   ld sp,(nn)
+;	880924 : ld a,i a,r i,a r,a
+;	880925 : reti, retn, neg
+
+;	globals from this module
+
+		xdef	edinit
+		xdef	edstart
+		xdef	edstop
+		xdef	z80opced
+		xdef	zekedver
+
+;	externals from zek
+
+		xref	edoffs
+		xref	cntbuf
+		xref	z80emu1
+		xref	setflg
+
+;	externals from ce
+
+		xref	osentry
+
+;	externals from ze
+
+		xref	ireg
+		xref	glflgs
+		xref	z80opc2ni
+
+		section zeked,code
+
+;	macros
+
+		include zekmc.i
+
+		ds.w	0			;alignment
+
+;	edinit
+;	initialize emulation parameters
+;	start count of opcode, bdos & bios
+;	stop count of opcode, bdos & bios
+
+edstart:
+edstop:
+edinit: 	move.l	#z80emusw,a6
+		move.w	(a6),d1                 ;get bra.s
+		move.w	cntinst,(a6)            ;put addq
+		move.w	d1,cntinst		;save bra.s
+		rts
+
+;	entry : d0.l=fa'fa, d1.l=hl'hl, d2.l=de'de, d3.l=bc'bc
+;		d4.l=iyix
+;		d7.l=number of instructions to run, 0=until halt
+;		a0.w=pc, a1.w=sp,
+;		a2.l=ptr to scratch, a3.l=z80opctab,
+;		a4.l=ptr middle of z80 pgm area
+;		the program area must be configured as this:
+;		relative start	0      $8000	$ffff
+;				|________|________|
+;		pc	      $8000	 0	$7fff
+;		d0 flags 15 14 13 12 11 10  9  8
+;			  s  z	-  h  -  v  n  c
+;	scratch use : d5.l, d6.l, a5.l, a6.l
+;	limitations:
+;	1. ld r,a is a nop
+;	2. ld a,r puts the loop counter in r
+
+;	$ed 1:st byte in special 2 byte opcodes
+;	decode instruction
+
+z80opced:	moveq.l #0,d6
+		move.b	0(a4,a0.w),d6           ;2:nd opcode
+z80emusw:	bra.s	count
+z80emu3:	asl.w	#2,d6			;4 bytes per entry
+		move.l	#z80opctabed,a5
+		move.l	0(a5,d6.l),a5
+		jmp	(a5)                    ;do instruction
+
+;	code if debug count mode
+
+count:		btst.b	#5,glflgs
+		beq.s	count1			;if no count
+		move.l	cntbuf,a5
+		add.w	d6,a5
+		addq.b	#1,edoffs(a5)           ;inc cnt
+		bne.s	count1			;if not max cnt
+		subq.b	#1,edoffs(a5)           ;restore max cnt
+count1: 	addq.l	#1,a0
+		bra.s	z80emu3 		;cont emu
+
+;	not implemented opcode
+
+z80emuni:	addq.l	#4,a7			;ret addr
+		jmp	z80opc2ni
+
+;	$01, invoke operating system
+
+z80opc01:	jmp	osentry
+
+;	$42 sbc hl,bc
+
+z80opc42:	sbchlrr d3
+		jmp	z80emu1
+
+;	$43 ld (nn),bc
+
+z80opc43:	ldindrr d3
+		jmp	z80emu1
+
+;	$44 neg
+
+z80opc44:	neg.b	d0
+		jsr	setflg
+		jmp	z80emu1
+
+;	$45 retn
+
+z80opc45:	ret
+		jmp	z80emu1
+
+;	$47 ld i,a
+
+z80opc47:	move.b	d0,ireg
+		jsr	setflg
+		jmp	z80emu1
+
+;	$4a adc hl,bc
+
+z80opc4a:	adchlrr d3
+		jmp	z80emu1
+
+;	$4b ld bc,(nn)
+
+z80opc4b:	ldrrind d3
+		jmp	z80emu1
+
+;	$4d reti
+
+z80opc4d:	ret
+		jmp	z80emu1
+
+;	$4f ld r,a
+
+z80opc4f:	jmp	z80emu1
+
+;	$52 sbc hl,de
+
+z80opc52:	sbchlrr d2
+		jmp	z80emu1
+
+;	$53 ld (nn),de
+
+z80opc53:	ldindrr d2
+		jmp	z80emu1
+
+;	$57 ld a,i
+
+z80opc57:	move.b	ireg,d0
+		jsr	setflg
+		jmp	z80emu1
+
+;	5a adc hl,de
+
+z80opc5a:	adchlrr d2
+		jmp	z80emu1
+
+;	$5b ld de,(nn)
+
+z80opc5b:	ldrrind d2
+		jmp	z80emu1
+
+;	$5f ld a,r
+
+z80opc5f:	move.b	d7,d0			;loop cnt
+		jsr	setflg
+		jmp	z80emu1
+
+;	$72 sbc hl,sp
+
+z80opc72:	move.w	a1,d5			;sp
+		sbchlrr d5
+		jmp	z80emu1
+
+;	$73 ld (nn),sp
+
+z80opc73:	move.w	a1,d5			;sp
+		ldindrr d5
+		jmp	z80emu1
+
+;	7a adc hl,sp
+
+z80opc7a:	move.w	a1,d5			;sp
+		adchlrr d5
+		jmp	z80emu1
+
+;	$7b ld sp,(nn)
+
+z80opc7b:	ldrrind d5
+		move.w	d5,a1			;sp
+		jmp	z80emu1
+
+;	$a0 ldi
+
+z80opca0:	move.b	0(a4,d1.w),0(a4,d2.w)   ;(hl)->(de)
+		addq.w	#1,d1
+		addq.w	#1,d2
+		subq.w	#1,d3
+		bclr.l	#10,d0			;reset p/v
+		or.w	d3,d3
+		bne.s	z80opca01		;if bc<>0
+		jmp	z80emu1
+z80opca01:	bset.l	#10,d0			;set p/v
+		jmp	z80emu1
+
+;	$a1 cpi
+
+z80opca1:	cmp.b	0(a4,d1.w),d0           ;cp (hl),a
+		jsr	setflg
+		addq.w	#1,d1
+		subq.w	#1,d3
+		or.w	d3,d3
+		bclr.l	#10,d0			;reset p/v
+		bne.s	z80opcba11		;if bc<>0
+		jmp	z80emu1
+z80opcba11:	bset.l	#10,d0			;set p/v
+		jmp	z80emu1
+
+;	$a8 ldd
+
+z80opca8:	move.b	0(a4,d1.w),0(a4,d2.w)   ;(hl)->(de)
+		subq.w	#1,d1
+		subq.w	#1,d2
+		subq.w	#1,d3
+		bclr.l	#10,d0			;reset p/v
+		or.w	d3,d3
+		bne.s	z80opca81		;if bc<>0
+		jmp	z80emu1
+z80opca81:	bset.l	#10,d0			;set p/v
+		jmp	z80emu1
+
+;	$a9 cpd
+
+z80opca9:	cmp.b	0(a4,d1.w),d0           ;cp (hl),a
+		jsr	setflg
+		subq.w	#1,d1
+		subq.w	#1,d3
+		or.w	d3,d3
+		bclr.l	#10,d0			;reset p/v
+		bne.s	z80opca91		;if bc<>0
+		jmp	z80emu1
+z80opca91:	bset.l	#10,d0			;set p/v
+		jmp	z80emu1
+
+;	$b0 ldir
+
+z80opcb0:	move.b	0(a4,d1.w),0(a4,d2.w)   ;(hl)->(de)
+		addq.w	#1,d1
+		addq.w	#1,d2
+		subq.w	#1,d3
+		bne.s	z80opcb0		;if bc>0
+		bclr.l	#10,d0			;reset p/v
+		jmp	z80emu1
+
+;	$b1 cpir
+
+z80opcb1:	cmp.b	0(a4,d1.w),d0           ;cp (hl),a
+		beq.s	z80opcb11		;if same
+		addq.w	#1,d1
+		subq.w	#1,d3
+		bne.s	z80opcb1		;if bc>0
+
+;	exit when bc=0
+
+		cmp.b	-1(a4,d1.w),d0          ;cp (hl-1),a
+		jsr	setflg
+		bclr.l	#10,d0			;reset p/v
+		jmp	z80emu1
+
+;	exit when (hl)=a
+
+z80opcb11:	jsr	setflg
+		addq.w	#1,d1
+		subq.w	#1,d3
+		or.w	d3,d3
+		bclr.l	#10,d0			;reset p/v
+		bne.s	z80opcb12		;if bc<>0
+		jmp	z80emu1
+z80opcb12:	bset.l	#10,d0			;set p/v
+		jmp	z80emu1
+
+;	$b8 lddr
+
+z80opcb8:	move.b	0(a4,d1.w),0(a4,d2.w)   ;(hl)->(de)
+		subq.w	#1,d1
+		subq.w	#1,d2
+		subq.w	#1,d3
+		bne.s	z80opcb8		;if bc>0
+		bclr.l	#10,d0			;reset p/v
+		jmp	z80emu1
+
+;	$b9 cpdr
+
+z80opcb9:	cmp.b	0(a4,d1.w),d0           ;cp (hl),a
+		beq.s	z80opcb91		;if same
+		subq.w	#1,d1
+		subq.w	#1,d3
+		bne.s	z80opcb9		;if bc>0
+
+;	exit when bc=0
+
+		cmp.b	-1(a4,d1.w),d0          ;cp (hl-1),a
+		jsr	setflg
+		bclr.l	#10,d0			;reset p/v
+		jmp	z80emu1
+
+;	exit when (hl)=a
+
+z80opcb91:	jsr	setflg
+		subq.w	#1,d1
+		subq.w	#1,d3
+		or.w	d3,d3
+		bclr.l	#10,d0			;reset p/v
+		bne.s	z80opcb92		;if bc<>0
+		jmp	z80emu1
+z80opcb92:	bset.l	#10,d0			;set p/v
+		jmp	z80emu1
+
+;	data area
+;	initialized data area
+
+;	address table for z80 second opcode $ed
+
+z80opctabed:	dc.l  z80emuni
+		dc.l  z80opc01
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni			;$10
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni			;$20
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni			;$30
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni			;$40
+		dc.l  z80emuni
+		dc.l  z80opc42
+		dc.l  z80opc43
+		dc.l  z80opc44
+		dc.l  z80opc45
+		dc.l  z80emuni
+		dc.l  z80opc47
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc4a
+		dc.l  z80opc4b
+		dc.l  z80emuni
+		dc.l  z80opc4d
+		dc.l  z80emuni
+		dc.l  z80opc4f
+		dc.l  z80emuni			;$50
+		dc.l  z80emuni
+		dc.l  z80opc52
+		dc.l  z80opc53
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc57
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc5a
+		dc.l  z80opc5b
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc5f
+		dc.l  z80emuni			;$60
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni			;$70
+		dc.l  z80emuni
+		dc.l  z80opc72
+		dc.l  z80opc73
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opc7a
+		dc.l  z80opc7b
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni			;$80
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni			;$90
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opca0			;$a0
+		dc.l  z80opca1
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opca8
+		dc.l  z80opca9
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opcb0			;$b0
+		dc.l  z80opcb1
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80opcb8
+		dc.l  z80opcb9
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni			;$c0
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni			;$d0
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni			;$e0
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni			;opced already used
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni			;$f0
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+		dc.l  z80emuni
+
+;	debug count instruction
+
+cntinst:	addq.l	#1,a0
+
+		end
+
