@@ -2,6 +2,8 @@
 
 A CP/M-80 simulator (in portable C and 68000 assembly flavors)
 
+---
+
 Sample \'_screen shot_\' from _**WordStar 3.00**_:
 
 >                editing no file
