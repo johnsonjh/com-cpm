@@ -1,5 +1,7 @@
 # COM: A CP/M-80 Simulator
 
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/d422179a2d3049bea775681df58a630c)](https://app.codacy.com/gh/johnsonjh/com-cpm?utm_source=github.com&utm_medium=referral&utm_content=johnsonjh/com-cpm&utm_campaign=Badge_Grade_Settings)
+
 ---
 
 A CP/M-80 simulator (in portable C and 68000 assembly flavors)
