@@ -1,16 +1,10 @@
 # Security Policy
 
-
-
 ## Reporting a Vulnerability
-
-
 
 - If you discover a security vulnerability, please email
 
   \<[trnsz@pobox.com](mailto:trnsz@pobox.com)\>.
-
-
 
 ```text
 
@@ -90,3 +84,4 @@ DqMfSxssYuoNk8GtcTX+GFmanx+ANJN37nTwUAmBYn/ainw57gOh74vKYaHXZGat
 
 ka74wUNJNxkAEQEAAYkCPAQYAQgAJhYhBK+taxW3knw3gBsaDe28s+sCO8ftBQJf
 
+```
