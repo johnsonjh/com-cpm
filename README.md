@@ -380,7 +380,7 @@ though, _were_ blazingly fast in comparison.)
 
 - **_NOTE_**: **PLEASE** just
   **[open an issue here on GitHub](https://github.com/johnsonjh/com-cpm/issues)!**
-  - **Don't** bother Jim on the phone, please!\*
+  - **Don't** bother Jim on the phone, please!
 - All fixes sent to me here **will** be sent upstream.
 
 ### Original Author
