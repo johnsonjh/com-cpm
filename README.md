@@ -374,7 +374,16 @@ laboratory curiosity to practical computer, nearly overnight. (Although the
 simulation ran at less than half the speed of the real thing. Native programs,
 though, _were_ blazingly fast in comparison.)
 
-## Author Information
+## Contact
+
+### Important Notice
+
+* ***NOTE***: **PLEASE** just
+  **[open an issue here on GitHub](https://github.com/johnsonjh/com-cpm/issues)!**
+  * **Don't** bother Jim on the phone, please!*
+* All fixes sent to me here **will** be sent upstream.
+
+### Original Author
 
 - [Jim Cathey](http://formicapeak.com/~jimc)
 - **Email**: [jim.cathey.pb@gmail.com](mailto:jim.cathey.pb@gmail.com)
