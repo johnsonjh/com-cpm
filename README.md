@@ -1,7 +1,5 @@
 # COM: A CP/M-80 Simulator
 
-[![Codacy Badge](https://api.codacy.com/project/badge/Grade/d422179a2d3049bea775681df58a630c)](https://app.codacy.com/gh/johnsonjh/com-cpm?utm_source=github.com&utm_medium=referral&utm_content=johnsonjh/com-cpm&utm_campaign=Badge_Grade_Settings)
-
 ---
 
 A CP/M-80 simulator (in portable C and 68000 assembly flavors)
@@ -376,7 +374,16 @@ laboratory curiosity to practical computer, nearly overnight. (Although the
 simulation ran at less than half the speed of the real thing. Native programs,
 though, _were_ blazingly fast in comparison.)
 
-## Author Information
+## Contact
+
+### Important Notice
+
+- **_NOTE_**: **PLEASE** just
+  **[open an issue here on GitHub](https://github.com/johnsonjh/com-cpm/issues)!**
+  - **Don't** bother Jim on the phone, please!
+- All fixes sent to me here **will** be sent upstream.
+
+### Original Author
 
 - [Jim Cathey](http://formicapeak.com/~jimc)
 - **Email**: [jim.cathey.pb@gmail.com](mailto:jim.cathey.pb@gmail.com)
