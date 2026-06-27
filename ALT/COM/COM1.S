@@ -7,15 +7,18 @@
 *       Morrow HDDMA DMA buffer translating.                            *
 *                                                                       *
 *                                                                       *
-*       Version 1.2 1/21/85 JEC                                         *
+*       Version 1.3 6/27/2026 JHJ                                       *
+*               Fix bug with setting parity bit                         *
+*                                                                       *
+*       Version 1.2 1/21/1985 JEC                                       *
 *               Fixed Extent bug in OPEN logic.                         *
 *               Sped up code, sample MAC from 2:13 to 1:40.             *
 *               Now runs at a 1.4 MHz equivalent based on MAC sample.   *
 *                                                                       *
-*       Version 1.1 8/29/84 JEC                                         *
+*       Version 1.1 8/29/1984 JEC                                       *
 *               Fixed BDOS call #6 bug.                                 *
 *                                                                       *
-*       Version 1.0 05/25/84 by Jim Cathey                              *
+*       Version 1.0 05/25/1984 by Jim Cathey                            *
 *                                                                       *
 *       This program has been written for speed wherever possible,      *
 *       as such tends to be large because of the separate subroutine    *
@@ -369,7 +372,7 @@ tail3   move.b (a2)+,(a3)+      ; Move the rest of the tail.
         move.l  A5,A2           ; restore ptr to head of command tail
         move.w  D4,D0           ; character count
         addq    #1,D0           ; fixed
-        lea     $6c(targbase),A3 ; fcb2 base    
+        lea     $6c(targbase),A3 ; fcb2 base
 tail4   cmp.b #$20,(a2)+        ; Hack off first filename
         dbeq d0,tail4
         bne loaded              ; If there's any tail left, then
@@ -403,7 +406,7 @@ fcb2fn  cmpi.b  #'.',(A2)       ; is dot?
         subq    #1,D0           ; count in byte
         dbeq    D2,fcb2fn       ; count and loop
         bne     loaded          ; no more characters
-fcb2sl  cmpi.b  #'.',(A2)       ; is dot?       
+fcb2sl  cmpi.b  #'.',(A2)       ; is dot?
         beq     fcb2t1          ; br if so
         cmpi.b  #' ',(A2)       ; is space?
         beq     loaded          ; if so, we are done
@@ -415,7 +418,7 @@ fcb2fq  move.b  #'?',(A5)+      ; stash ?
         dbra    D2,fcb2fq       ; loop
         tst.b   (A2)+           ; skip *
         subq    #1,D0           ; and count it
-        bra     fcb2sl          ; and go look for end or dot    
+        bra     fcb2sl          ; and go look for end or dot
 fcb2t1  tst.b   (A2)+           ; skip dot
         subq    #1,D0           ; and count it
         lea     09(A3),A5       ; type base
@@ -761,7 +764,7 @@ ntoa    movem.l d0-d1,-(sp)     ; Nybble in d1 to ASCII, then output.
         add.b #'A'-'9'-1,d1
 ntoa2   add.b #'0',d1
         move.w #2,d0
-        bdos 
+        bdos
         movem.l (sp)+,d0-d1
         rts
 
@@ -798,7 +801,7 @@ lntoa   movem.l d0-d1,-(sp)     ; Nybble in d1 to ASCII, then output.
         add.b #'A'-'9'-1,d1
 lntoa2  add.b #'0',d1
 lntoa3  move.w #5,d0
-        bdos 
+        bdos
         movem.l (sp)+,d0-d1
         rts
 
@@ -958,4 +961,3 @@ registers ds.b 10               ; Actual storage for 8080's other registers.
 target  ds.b $10000             ; 8080's universe.
 junkbuf ds.b $80                ; For BDOS' OPEN faking (RREAD buffer).
         .end
-                                                                 

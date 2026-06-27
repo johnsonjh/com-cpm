@@ -90,7 +90,7 @@ optabl  dc.l nop00,lxib,staxb,inxb,inrb,dcrb,mvib,rlca
 *                                                                       *
 *************************************************************************
 
-flags   dc.b $00,$01,$04,$05,$40,$41,$44,$45,$80,$81,$84,$85,$C0,$C1,$C4,$C5
+flags   dc.b $00,$01,$00,$01,$40,$41,$40,$41,$80,$81,$80,$81,$C0,$C1,$C0,$C1
 
         dc.b $44,$00,$00,$04,$00,$04,$04,$00,$00,$04,$04,$00,$04,$00,$00,$04
         dc.b $00,$04,$04,$00,$04,$00,$00,$04,$04,$00,$00,$04,$00,$04,$04,$00
@@ -139,17 +139,13 @@ inxb    inc.w regb(regs)                        ; 03 Inx B
 
 inrb    inc.b regb(regs)                        ; 04 Inr B
         move sr,d0
-        and.w regcon0e,d0
-        and.w regcon01,regf
-        or.b 0(flagptr,d0.w),regf
-        jmp (return)
+        move.b regb(regs),d1
+        bra setinr
 
 dcrb    dec.b regb(regs)                        ; 05 Dcr B
         move sr,d0
-        and.w regcon0e,d0
-        and.w regcon01,regf
-        or.b 0(flagptr,d0.w),regf
-        jmp (return)
+        move.b regb(regs),d1
+        bra setinr
 
 mvib    move.b (pseudopc)+,regb(regs)           ; 06 Mvi b,nn
         jmp (return)
@@ -176,17 +172,13 @@ dcxb    dec.w regb(regs)                        ; 0B Dcx B
 
 inrc    inc.b regc(regs)                        ; 0C Inr C
         move sr,d0
-        and.w regcon0e,d0
-        and.w regcon01,regf
-        or.b 0(flagptr,d0.w),regf
-        jmp (return)
+        move.b regc(regs),d1
+        bra setinr
 
 dcrc    dec.b regc(regs)                        ; 0D Dcr C
         move sr,d0
-        and.w regcon0e,d0
-        and.w regcon01,regf
-        or.b 0(flagptr,d0.w),regf
-        jmp (return)
+        move.b regc(regs),d1
+        bra setinr
 
 mvic    move.b (pseudopc)+,regc(regs)           ; 0E Mvi C
         jmp (return)
@@ -212,17 +204,13 @@ inxd    inc.w regd(regs)                        ; 13 Inx D
 
 inrd    inc.b regd(regs)                        ; 14 Inr D
         move sr,d0
-        and.w regcon0e,d0
-        and.w regcon01,regf
-        or.b 0(flagptr,d0.w),regf
-        jmp (return)
+        move.b regd(regs),d1
+        bra setinr
 
 dcrd    dec.b regd(regs)                        ; 15 Dcr D
         move sr,d0
-        and.w regcon0e,d0
-        and.w regcon01,regf
-        or.b 0(flagptr,d0.w),regf
-        jmp (return)
+        move.b regd(regs),d1
+        bra setinr
 
 mvid    move.b (pseudopc)+,regd(regs)           ; 16 Mvi D,nn
         jmp (return)
@@ -247,17 +235,13 @@ dcxd    dec.w regd(regs)                        ; 1B Dcx D
 
 inre    inc.b rege(regs)                        ; 1C Inr E
         move sr,d0
-        and.w regcon0e,d0
-        and.w regcon01,regf
-        or.b 0(flagptr,d0.w),regf
-        jmp (return)
+        move.b rege(regs),d1
+        bra setinr
 
 dcre    dec.b rege(regs)                        ; 1D Dcr E
         move sr,d0
-        and.w regcon0e,d0
-        and.w regcon01,regf
-        or.b 0(flagptr,d0.w),regf
-        jmp (return)
+        move.b rege(regs),d1
+        bra setinr
 
 mvie    move.b (pseudopc)+,rege(regs)           ; 1E Mvi E,nn
         jmp (return)
@@ -288,17 +272,13 @@ inxh    inc.w regh(regs)                        ; 23 Inx H
 
 inrh    inc.b regh(regs)                        ; 24 Inr H
         move sr,d0
-        and.w regcon0e,d0
-        and.w regcon01,regf
-        or.b 0(flagptr,d0.w),regf
-        jmp (return)
+        move.b regh(regs),d1
+        bra setinr
 
 dcrh    dec.b regh(regs)                        ; 25 Dcr H
         move sr,d0
-        and.w regcon0e,d0
-        and.w regcon01,regf
-        or.b 0(flagptr,d0.w),regf
-        jmp (return)
+        move.b regh(regs),d1
+        bra setinr
 
 mvih    move.b (pseudopc)+,regh(regs)           ; 26 Mvi H,nn
         jmp (return)
@@ -330,7 +310,10 @@ fullcy  add.b #$60,rega
 enddaa  move sr,regf
         swap regcon0e
         and.w regcon0f,regf
-        move.b 0(flagptr,regf.w),regf
+        move.b 0(flagptr,regf.w),regf      * S,Z,C from CCR
+        move.b rega,d0
+        and.w regconff,d0
+        or.b 16(flagptr,d0.w),regf         * OR in P from result
         jmp (return)
 nofull  tst.b rega
         bra enddaa
@@ -357,17 +340,13 @@ dcxh    dec.w regh(regs)                        ; 2B Dcx H
 
 inrl    inc.b regl(regs)                        ; 2C Inr L
         move sr,d0
-        and.w regcon0e,d0
-        and.w regcon01,regf
-        or.b 0(flagptr,d0.w),regf
-        jmp (return)
+        move.b regl(regs),d1
+        bra setinr
 
 dcrl    dec.b regl(regs)                        ; 2D Dcr L
         move sr,d0
-        and.w regcon0e,d0
-        and.w regcon01,regf
-        or.b 0(flagptr,d0.w),regf
-        jmp (return)
+        move.b regl(regs),d1
+        bra setinr
 
 mvil    move.b (pseudopc)+,regl(regs)           ; 2E Mvi L,nn
         jmp (return)
@@ -396,20 +375,20 @@ inxs    addq.l #1,pseudosp                      ; 33 Inx S
         jmp (return)
 
 inrm    move.w regh(regs),d0                    ; 34 Inr M
-        inc.b 0(targbase,d0.l)
+        move.l d0,a0
+        adda.l targbase,a0
+        inc.b (a0)
         move sr,d0
-        and.w regcon0e,d0
-        and.w regcon01,regf
-        or.b 0(flagptr,d0.w),regf
-        jmp (return)
+        move.b (a0),d1
+        bra setinr
 
 dcrm    move.w regh(regs),d0                    ; 35 Dcr M
-        dec.b 0(targbase,d0.l)
+        move.l d0,a0
+        adda.l targbase,a0
+        dec.b (a0)
         move sr,d0
-        and.w regcon0e,d0
-        and.w regcon01,regf
-        or.b 0(flagptr,d0.w),regf
-        jmp (return)
+        move.b (a0),d1
+        bra setinr
 
 mvim    move.w regh(regs),d0                    ; 36 Mvi M,nn
         move.b (pseudopc)+,0(targbase,d0.l)
@@ -440,17 +419,13 @@ inra    move.b rega,regop1(regs)                ; 3C Inr A
         move.b regcon0e,regop3(regs)
         inc.b rega
         move sr,d0
-        and.w regcon0e,d0
-        and.w regcon01,regf
-        or.b 0(flagptr,d0.w),regf
-        jmp (return)
+        move.b rega,d1
+        bra setinr
 
 dcra    dec.b rega                              ; 3D Dcr A
         move sr,d0
-        and.w regcon0e,d0
-        and.w regcon01,regf
-        or.b 0(flagptr,d0.w),regf
-        jmp (return)
+        move.b rega,d1
+        bra setinr
 
 mvia    move.b (pseudopc)+,rega                 ; 3E Mvi A,nn
         jmp (return)
@@ -663,65 +638,72 @@ moveam  move.w regh(regs),d0                    ; 7E Mov A,M
 
 moveaa  jmp (return)                            ; 7F Mov A,A
 
+setarith:
+        move sr,d0
+        and.w regcon0f,d0
+        move.b 0(flagptr,d0.w),regf         * S,Z,C from 68000 CCR
+        move.b rega,d0
+        and.w regconff,d0
+        or.b 16(flagptr,d0.w),regf          * OR in P (and redundant S,Z) from result
+        jmp (return)
+
+setcmp:
+        move sr,d0
+        and.w regcon0f,d0
+        move.b 0(flagptr,d0.w),regf         * S,Z,C from 68000 CCR
+        and.w regconff,d1
+        or.b 16(flagptr,d1.w),regf          * OR in P from subtraction result
+        jmp (return)
+
+setinr:
+        and.w regcon0e,d0                   * mask to NZV (no carry)
+        and.w regcon01,regf                 * preserve old carry
+        or.b 0(flagptr,d0.w),regf           * OR in S,Z from CCR
+        and.w regconff,d1
+        or.b 16(flagptr,d1.w),regf          * OR in P from result
+        jmp (return)
+
 addb    move.b regb(regs),d0                    ; 80 Add B
         move.b d0,regop1(regs)
         move.b rega,regop2(regs)
         move.b regcon0e,regop3(regs)
         add.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 addc    move.b regc(regs),d0                    ; 81 Add C
         move.b d0,regop1(regs)
         move.b rega,regop2(regs)
         move.b regcon0e,regop3(regs)
         add.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 addd    move.b regd(regs),d0                    ; 82 Add D
         move.b d0,regop1(regs)
         move.b rega,regop2(regs)
         move.b regcon0e,regop3(regs)
         add.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 adde    move.b rege(regs),d0                    ; 83 Add E
         move.b d0,regop1(regs)
         move.b rega,regop2(regs)
         move.b regcon0e,regop3(regs)
         add.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 addh    move.b regh(regs),d0                    ; 84 Add H
         move.b d0,regop1(regs)
         move.b rega,regop2(regs)
         move.b regcon0e,regop3(regs)
         add.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 addl    move.b regl(regs),d0                    ; 85 Add L
         move.b d0,regop1(regs)
         move.b rega,regop2(regs)
         move.b regcon0e,regop3(regs)
         add.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 addm    move.w regh(regs),d0                    ; 86 Add M
         move.b 0(targbase,d0.l),d0
@@ -729,19 +711,13 @@ addm    move.w regh(regs),d0                    ; 86 Add M
         move.b rega,regop2(regs)
         move.b regcon0e,regop3(regs)
         add.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 addaa   move.b rega,regop1(regs)                ; 87 Add A
         move.b rega,regop2(regs)
         move.b regcon0e,regop3(regs)
         add.b rega,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 adcb    move.b regf,regop3(regs)                ; 88 Adc B
         asr.b #1,regf
@@ -750,10 +726,7 @@ adcb    move.b regf,regop3(regs)                ; 88 Adc B
         move.b rega,regop2(regs)
         moveq #0,d1
         addx.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 adcc    move.b regf,regop3(regs)                ; 89 Adc C
         asr.b #1,regf
@@ -762,10 +735,7 @@ adcc    move.b regf,regop3(regs)                ; 89 Adc C
         move.b rega,regop2(regs)
         moveq #0,d1
         addx.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 adcd    move.b regf,regop3(regs)                ; 8A Adc D
         asr.b #1,regf
@@ -774,10 +744,7 @@ adcd    move.b regf,regop3(regs)                ; 8A Adc D
         move.b rega,regop2(regs)
         moveq #0,d1
         addx.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 adce    move.b regf,regop3(regs)                ; 8B Adc E
         asr.b #1,regf
@@ -786,10 +753,7 @@ adce    move.b regf,regop3(regs)                ; 8B Adc E
         move.b rega,regop2(regs)
         moveq #0,d1
         addx.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 adch    move.b regf,regop3(regs)                ; 8C Adc H
         asr.b #1,regf
@@ -798,10 +762,7 @@ adch    move.b regf,regop3(regs)                ; 8C Adc H
         move.b rega,regop2(regs)
         moveq #0,d1
         addx.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 adcl    move.b regf,regop3(regs)                ; 8D Adc L
         asr.b #1,regf
@@ -810,10 +771,7 @@ adcl    move.b regf,regop3(regs)                ; 8D Adc L
         move.b rega,regop2(regs)
         moveq #0,d1
         addx.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 adcm    move.b regf,regop3(regs)                ; 8E Adc M
         move.w regh(regs),d0
@@ -825,10 +783,7 @@ adcm    move.b regf,regop3(regs)                ; 8E Adc M
         move.b rega,regop2(regs)
         moveq #0,d1
         addx.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 adca    move.b regf,regop3(regs)                ; 8F Adc A
         asr.b #1,regf
@@ -837,121 +792,76 @@ adca    move.b regf,regop3(regs)                ; 8F Adc A
         move.b rega,regop2(regs)
         moveq #0,d1
         addx.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 subb    move.b regb(regs),d0                    ; 90 Sub B
         sub.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 subc    move.b regc(regs),d0                    ; 91 Sub C
         sub.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 subd    move.b regd(regs),d0                    ; 92 Sub D
         sub.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 sube    move.b rege(regs),d0                    ; 93 Sub E
         sub.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 subh    move.b regh(regs),d0                    ; 94 Sub H
         sub.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 subl    move.b regl(regs),d0                    ; 95 Sub L
         sub.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 subm    move.w regh(regs),d0                    ; 96 Sub M
         move.b 0(targbase,d0.l),d0
         sub.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 subaa   move.b rega,d0                          ; 97 Sub A
         sub.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 sbbb    asr.b #1,regf                           ; 98 Sbb B
         move.b regb(regs),d0
         moveq #0,d1
         subx.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 sbbc    asr.b #1,regf                           ; 99 Sbb C
         move.b regc(regs),d0
         moveq #0,d1
         subx.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 sbbd    asr.b #1,regf                           ; 9A Sbb D
         move.b regd(regs),d0
         moveq #0,d1
         subx.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 sbbe    asr.b #1,regf                           ; 9B Sbb E
         move.b rege(regs),d0
         moveq #0,d1
         subx.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 sbbh    asr.b #1,regf                           ; 9C Sbb H
         move.b regh(regs),d0
         moveq #0,d1
         subx.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 sbbl    asr.b #1,regf                           ; 9D Sbb L
         move.b regl(regs),d0
         moveq #0,d1
         subx.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 sbbm    move.w regh(regs),d0                    ; 9E Sbb M
         move.l d0,a0
@@ -960,19 +870,13 @@ sbbm    move.w regh(regs),d0                    ; 9E Sbb M
         move.b (a0),d0
         moveq #0,d1
         subx.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 sbba    asr.b #1,regf                           ; 9F Sbb A
         move.b rega,d0
         moveq #0,d1
         subx.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 andb    move.b regb(regs),d0                    ; A0 Ana B
         and.b rega,d0
@@ -1139,56 +1043,40 @@ oraa    move.b rega,d0                          ; B7 Ora A
         jmp (return)
 
 
-cmpb    cmp.b regb(regs),rega                   ; B8 Cmp B
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+cmpb    move.b rega,d1                          ; B8 Cmp B
+        sub.b regb(regs),d1
+        bra setcmp
 
-cmpc    cmp.b regc(regs),rega                   ; BB Cmp C
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+cmpc    move.b rega,d1                          ; B9 Cmp C
+        sub.b regc(regs),d1
+        bra setcmp
 
-cmpd    cmp.b regd(regs),rega                   ; BA Cmp D
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+cmpd    move.b rega,d1                          ; BA Cmp D
+        sub.b regd(regs),d1
+        bra setcmp
 
-cmpe    cmp.b rege(regs),rega                   ; BB Cmp E
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+cmpe    move.b rega,d1                          ; BB Cmp E
+        sub.b rege(regs),d1
+        bra setcmp
 
-cmph    cmp.b regh(regs),rega                   ; BC Cmp H
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+cmph    move.b rega,d1                          ; BC Cmp H
+        sub.b regh(regs),d1
+        bra setcmp
 
-cmpl    cmp.b regl(regs),rega                   ; BD Cmp L
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+cmpl    move.b rega,d1                          ; BD Cmp L
+        sub.b regl(regs),d1
+        bra setcmp
 
 cmpam   move.w regh(regs),d0                    ; BE Cmp M
         move.l d0,a0
         adda.l targbase,a0
-        cmp.b (a0),rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        move.b rega,d1
+        sub.b (a0),d1
+        bra setcmp
 
-cmpaa   cmp.b rega,rega                         ; BF Cmp A
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+cmpaa   move.b rega,d1                          ; BF Cmp A
+        sub.b rega,d1
+        bra setcmp
 
 rnz     btst #6,regf                            ; C0 Rnz
         bne mloop
@@ -1244,10 +1132,7 @@ adi     move.b (pseudopc)+,d0                   ; C6 Adi nn
         move.b rega,regop2(regs)
         move.b regcon0e,regop3(regs)
         add.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 rst0    move.l pseudopc,d1                      ; C7 Rst 0
         sub.l targbase,d1
@@ -1314,10 +1199,7 @@ aci     move.b regf,regop3(regs)                ; CE Aci nn
         move.b rega,regop2(regs)
         moveq #0,d1
         addx.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 rst8    move.l pseudopc,d1                      ; CF Rst 8
         sub.l targbase,d1
@@ -1385,10 +1267,7 @@ pushd   move.b regd(regs),-(pseudosp)           ; D5 Push D
 
 sui     move.b (pseudopc)+,d0                   ; D6 Sui nn
         sub.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 rst10   move.l pseudopc,d1                      ; D7 Rst 10
         sub.l targbase,d1
@@ -1446,10 +1325,7 @@ sbi     asr.b #1,regf                           ; DE Sbi nn
         move.b (pseudopc)+,d0
         moveq #0,d1
         subx.b d0,rega
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+        bra setarith
 
 rst18   move.l pseudopc,d1                      ; DF Rst 18
         sub.l targbase,d1
@@ -1688,11 +1564,9 @@ cm      move.b 1(pseudopc),d0                   ; FC Cm addr
 
 nopFD   bra illegl                              ; FD Illegal for 8080
 
-cpi     cmp.b (pseudopc)+,rega                  ; FE Cpi nn
-        move sr,d0
-        and.w regcon0f,d0
-        move.b 0(flagptr,d0.w),regf
-        jmp (return)
+cpi     move.b rega,d1                          ; FE Cpi nn
+        sub.b (pseudopc)+,d1
+        bra setcmp
 
 rst38   move.l pseudopc,d1                      ; FF Rst 38
         sub.l targbase,d1
