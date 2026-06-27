@@ -247,7 +247,7 @@ hdloop2 move.b (a0)+,(a6)+
         move.l a0,-(sp)                 ; Save STATUS address for return val.
         suba.l targbase,a0
         move.l a0,dmalink               ; Stash new target link address.
-        
+
         move.l #$ff0000,a0              ; Do the output to HDDMA.
         adda.l d0,a0
         move.b rega,(a0)
